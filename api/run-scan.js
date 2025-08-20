@@ -1,89 +1,57 @@
-// /api/run-scan.js
-const {
-  GH_TOKEN,
-  GH_REPO,
-  GH_BRANCH = 'main',
-  GH_PATH_SIGNALS = 'signals.json',
-} = process.env;
+// api/run-scan.js
+import { writeJsonFile, PATHS, withCors } from "./_github";
 
-function parseRepo(repo) {
-  const [owner, name] = (repo || '').split('/');
-  return { owner, name };
-}
-async function ghGetFile(path) {
-  if (!GH_TOKEN || !GH_REPO) return null;
-  const { owner, name } = parseRepo(GH_REPO);
-  const url = `https://api.github.com/repos/${owner}/${name}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(GH_BRANCH)}`;
-  const r = await fetch(url, {
-    headers: { Authorization: `token ${GH_TOKEN}`, Accept: 'application/vnd.github+json' },
-    cache: 'no-store',
-  });
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`GitHub GET ${path} → ${r.status}`);
-  const j = await r.json();
-  const content = Buffer.from(j.content || '', 'base64').toString('utf8');
-  return { json: JSON.parse(content), sha: j.sha };
-}
-async function ghPutFile(path, json, sha, message) {
-  if (!GH_TOKEN || !GH_REPO) return false;
-  const { owner, name } = parseRepo(GH_REPO);
-  const url = `https://api.github.com/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`;
-  const contentB64 = Buffer.from(JSON.stringify(json, null, 2), 'utf8').toString('base64');
-  const body = { message: message || `update ${path}`, content: contentB64, branch: GH_BRANCH };
-  if (sha) body.sha = sha;
-  const r = await fetch(url, {
-    method: 'PUT',
-    headers: { Authorization: `token ${GH_TOKEN}`, Accept: 'application/vnd.github+json' },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`GitHub PUT ${path} → ${r.status}`);
-  return true;
-}
-
-// in-memory fallback
-globalThis.__MEM__ = globalThis.__MEM__ || {
-  signals: {
-    last_updated: new Date().toISOString(),
-    scan_group: '-',
-    signals_found: [],
-  },
+const GROUPS = {
+  sp500:     ["AAPL","MSFT","NVDA","GOOGL","AMZN","META","AVGO","TSLA","BRK.B","LLY"],
+  nasdaq100: ["AAPL","MSFT","NVDA","GOOGL","AMZN","META","PEP","COST","ADBE","NFLX"],
+  etf:       ["SPY","QQQ","ARKK","VTI","DIA","IWM","XLK","XLF","XLV","SMH"],
+  altcoins:  ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","DOTUSDT"],
+  binance:   ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","DOGEUSDT","TONUSDT","ADAUSDT"],
+  okx:       ["BTC-USDT","ETH-USDT","SOL-USDT","XRP-USDT","ADA-USDT"],
+  bitkub:    ["BTC_THB","ETH_THB","USDT_THB","BNB_THB","ARB_THB"],
+  set50:     ["SET:PTT","SET:CPALL","SET:ADVANC","SET:SCB","SET:BBL"],
+  set100:    ["SET:PTT","SET:CPALL","SET:ADVANC","SET:SCB","SET:BBL","SET:BDMS"],
+  gold:      ["XAUUSD","GOLD"], // เผื่ออนาคต
 };
 
-function mockScan(group) {
-  const pool = ['AAPL','MSFT','NVDA','GOOGL','AMZN','TSLA','META'];
-  const pick = () => pool[Math.floor(Math.random()*pool.length)];
-  const rows = Array.from({length: 5}, () => ({
-    ticker: pick(),
-    signal: Math.random() > 0.5 ? 'Strong Buy' : 'Buy',
-    price: +(100 + Math.random()*400).toFixed(2),
-    timeframe: Math.random() > 0.5 ? 'H1' : 'H4',
-  }));
-  return {
-    last_updated: new Date().toISOString(),
-    scan_group: group,
-    signals_found: rows,
-  };
+// mock indicator — ตรงนี้คือ “จุดเสียบ” ของอินดิเคเตอร์จริงของคุณ
+function mockSignalFor(ticker) {
+  const r = Math.random();
+  const sig = r > 0.8 ? "Strong Buy" : r > 0.6 ? "Buy" : r < 0.1 ? "Strong Sell" : r < 0.25 ? "Sell" : "Neutral";
+  const price = (100 + Math.random() * 2000).toFixed(2);
+  const tf    = ["15m","1H","4H","1D","1W"][Math.floor(Math.random()*5)];
+  return { ticker, signal: sig, price, timeframe: tf };
+}
+
+// ตรงนี้ “ควร” เชื่อมต่อ source จริง (TradingView/Binance/ฯลฯ) แล้วคำนวณอินดิเคเตอร์ของคุณ
+async function scanGroup(group) {
+  const list = GROUPS[group] || [];
+  // TODO: แทนที่ส่วน mock ข้างล่างด้วย real scanner ของคุณ
+  const picks = list
+    .map(t => mockSignalFor(t))
+    .filter(x => x.signal === "Strong Buy" || x.signal === "Buy")   // เผยเฉพาะที่เข้าเงื่อนไข
+    .slice(0, 20);
+  return picks;
 }
 
 export default async function handler(req, res) {
+  withCors(res);
+  if (req.method === "OPTIONS") return res.status(204).end();
+
   try {
-    const group = String(req.query.group || '').toLowerCase();
-    if (!group) return res.status(400).json({ ok:false, error:'missing group' });
+    const group = String(req.query.group || "").toLowerCase().trim();
+    if (!group) return res.status(400).json({ error: "missing group" });
 
-    // จำลองการสแกน
-    const result = mockScan(group);
+    const signals = await scanGroup(group);
+    const payload = {
+      last_updated: new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }),
+      scan_group: group,
+      signals_found: signals,
+    };
+    await writeJsonFile(PATHS.GH_PATH_SIGNALS, payload, `scan ${group}`);
 
-    // เขียนผลลง GitHub หรือ in-memory
-    if (GH_TOKEN && GH_REPO) {
-      const file = await ghGetFile(GH_PATH_SIGNALS);
-      await ghPutFile(GH_PATH_SIGNALS, result, file?.sha, `scan: ${group}`);
-    } else {
-      globalThis.__MEM__.signals = result;
-    }
-
-    return res.status(200).json({ ok: true, saved: true, group, count: result.signals_found.length });
+    return res.status(200).json(payload);
   } catch (e) {
-    console.error('run-scan error', e);
-    return res.status(500).json({ ok:false, error:String(e?.message||e) });
+    return res.status(500).json({ error: String(e?.message || e) });
   }
 }
