@@ -1,87 +1,131 @@
-// api/_github.js
-const memoryStore = {};
+// /api/_github.js
+// Helper สำหรับอ่าน/เขียนไฟล์ JSON บน GitHub ด้วย Personal Access Token
+// ใช้กับไฟล์ signals.json / settings.json ที่เก็บใน repo อื่นได้ (หรือ repo เดียวกันก็ได้)
 
-// ---- ENV
-const GH_TOKEN   = process.env.GH_TOKEN || "";
-const GH_REPO    = process.env.GH_REPO  || "";      // e.g. "oONOTTYOo99-Bot/oONOTTYOo99-Alert"
-const GH_BRANCH  = process.env.GH_BRANCH|| "main";
-const API_BASE   = "https://api.github.com";
+// ===== 1) อ่าน ENV =====
+const TOKEN =
+  process.env.GH_TOKEN ||
+  process.env.GITHUB_TOKEN || // เผื่อบางโปรเจ็กต์ใช้ชื่อนี้
+  "";
 
-// default paths
-const GH_PATH_SIGNALS  = process.env.GH_PATH_SIGNALS  || "signals.json";
-const GH_PATH_SETTINGS = process.env.GH_PATH_SETTINGS || "settings.json";
-
-function useGithub() {
-  return Boolean(GH_TOKEN && GH_REPO);
+if (!TOKEN) {
+  console.warn("[_github] Missing GH_TOKEN/GITHUB_TOKEN env.");
 }
 
-async function _ghGet(path) {
-  const url = `${API_BASE}/repos/${GH_REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(GH_BRANCH)}`;
-  const r = await fetch(url, {
-    headers: {
-      "Authorization": `Bearer ${GH_TOKEN}`,
-      "Accept": "application/vnd.github+json"
-    },
-    cache: "no-store",
-  });
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`GitHub GET failed: ${r.status} ${await r.text()}`);
-  return r.json();
+const REPO = process.env.GH_REPO || ""; // รูปแบบ owner/repo เช่น oONOTTYOo99-Bot/oONOTTYOo99-Alert
+const BRANCH = process.env.GH_BRANCH || "main";
+
+// เส้นทางไฟล์ที่ “ต้องตรงกับของจริงใน repo นั้นๆ”
+const PATH_SIGNALS = process.env.GH_PATH_SIGNALS || "api/signals.json";
+const PATH_SETTINGS = process.env.GH_PATH_SETTINGS || "api/settings.json";
+
+// ===== 2) ยูทิลพื้นฐานของ GitHub REST =====
+const API = "https://api.github.com";
+
+function ghHeaders() {
+  return {
+    Authorization: `Bearer ${TOKEN}`,
+    Accept: "application/vnd.github+json",
+    "Content-Type": "application/json",
+  };
 }
 
-async function _ghPut(path, contentBase64, sha, message="update via vercel api") {
-  const url = `${API_BASE}/repos/${GH_REPO}/contents/${encodeURIComponent(path)}`;
+async function gh(path, init) {
+  const url = `${API}${path}`;
+  const res = await fetch(url, { ...init, headers: ghHeaders() });
+  if (!res.ok) {
+    const body = await res.text();
+    const err = new Error(`GitHub API ${res.status} ${res.statusText}: ${body}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+// อ่านไฟล์ (ได้ทั้ง SHA และเนื้อหา)
+async function readFile(path) {
+  // GET /repos/{owner}/{repo}/contents/{path}?ref={branch}
+  return gh(
+    `/repos/${REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(
+      BRANCH
+    )}`,
+    { method: "GET" }
+  );
+}
+
+// สร้าง/อัปเดตไฟล์
+async function writeFile(path, contentStr, message, sha /* optional */) {
+  // PUT /repos/{owner}/{repo}/contents/{path}
   const body = {
     message,
-    content: contentBase64,
-    branch: GH_BRANCH,
+    content: Buffer.from(contentStr, "utf8").toString("base64"),
+    branch: BRANCH,
   };
   if (sha) body.sha = sha;
-  const r = await fetch(url, {
+
+  return gh(`/repos/${REPO}/contents/${encodeURIComponent(path)}`, {
     method: "PUT",
-    headers: {
-      "Authorization": `Bearer ${GH_TOKEN}`,
-      "Accept": "application/vnd.github+json",
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify(body),
   });
-  if (!r.ok) throw new Error(`GitHub PUT failed: ${r.status} ${await r.text()}`);
-  return r.json();
 }
 
-export async function readJsonFile(path, fallback) {
-  if (useGithub()) {
-    const meta = await _ghGet(path);
-    if (!meta) return fallback;
-    const buf = Buffer.from(meta.content, meta.encoding || "base64");
-    try { return JSON.parse(buf.toString("utf-8")); }
-    catch { return fallback; }
+// ===== 3) ฟังก์ชัน JSON ระดับสูง =====
+export async function readJson(path) {
+  try {
+    const file = await readFile(path);
+    const decoded = Buffer.from(file.content, "base64").toString("utf8");
+    return { sha: file.sha, data: JSON.parse(decoded) };
+  } catch (e) {
+    if (e.status === 404) {
+      // ไม่มีไฟล์ -> คืน default ว่าง
+      return { sha: null, data: null };
+    }
+    throw e;
   }
-  // in-memory fallback
-  return memoryStore[path] ?? fallback;
 }
 
-export async function writeJsonFile(path, data, message="update via vercel api") {
-  if (useGithub()) {
-    // read sha if exists
-    const meta = await _ghGet(path);
-    const sha = meta?.sha;
-    const contentBase64 = Buffer.from(JSON.stringify(data, null, 2), "utf-8").toString("base64");
-    await _ghPut(path, contentBase64, sha, message);
-    return true;
-  }
-  // in-memory fallback
-  memoryStore[path] = data;
-  return true;
+export async function writeJson(path, json, commitMsg = "update json") {
+  // อ่านก่อนเพื่อเอา sha (ถ้ามี)
+  const old = await readJson(path);
+  const str = JSON.stringify(json, null, 2);
+  return writeFile(path, str, commitMsg, old.sha || undefined);
 }
 
-// expose default paths
-export const PATHS = { GH_PATH_SIGNALS, GH_PATH_SETTINGS };
+// ===== 4) ฟังก์ชันเฉพาะ signals/settings =====
+export async function readSignals() {
+  const r = await readJson(PATH_SIGNALS);
+  // ถ้ายังไม่มีไฟล์ ให้คืนโครงสร้างว่างมาตรฐาน
+  return (
+    r.data || {
+      group: "-",
+      updatedAt: null,
+      results: [],
+    }
+  );
+}
 
-// CORS helper (ถ้าจะเรียกข้ามโดเมน)
-export function withCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "content-type,authorization");
+export async function writeSignals(payload) {
+  // payload ควรเป็น { group, updatedAt, results: [...] }
+  return writeJson(PATH_SIGNALS, payload, "update signals.json");
+}
+
+export async function readSettings() {
+  const r = await readJson(PATH_SETTINGS);
+  return r.data || { auto_scan_groups: [] };
+}
+
+export async function writeSettings(settings) {
+  // settings ควรเป็น { auto_scan_groups: [...] }
+  return writeJson(PATH_SETTINGS, settings, "update settings.json");
+}
+
+// ===== 5) Debug helper (optional export) =====
+export function debugEnv() {
+  return {
+    REPO,
+    BRANCH,
+    PATH_SIGNALS,
+    PATH_SETTINGS,
+    HAS_TOKEN: !!TOKEN,
+  };
 }
