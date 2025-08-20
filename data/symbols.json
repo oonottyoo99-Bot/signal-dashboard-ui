@@ -1,1 +1,22 @@
-
+{
+  "sp500": [
+    "AAPL","MSFT","NVDA","META","SPY","AMZN","GOOGL","AVGO","XOM","BRK-B"
+  ],
+  "nasdaq100": [
+    "AMZN","TSLA","GOOGL","QQQ","META","NVDA","MSFT","AAPL","ADBE","NFLX"
+  ],
+  "altcoins": [
+    "BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","MATICUSDT"
+  ],
+  "okx_top200": [],
+  "binance_top200": [],
+  "bitkub": [],
+  "set50": [],
+  "set100": [],
+  "etf": [
+    "SPY","QQQ","ARKK","VTI","DIA"
+  ],
+  "gold": [
+    "GC=F","XAUUSD=X"
+  ]
+}
