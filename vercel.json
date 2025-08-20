@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/run-scan?group=sp500",   "schedule": "0 2 * * *" },
+    { "path": "/api/run-scan?group=nasdaq100","schedule": "0 14 * * *" }
+  ]
+}
