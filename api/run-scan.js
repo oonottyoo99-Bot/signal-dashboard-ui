@@ -1,188 +1,247 @@
-// api/run-scan.js
-// ทำงานบน Vercel Edge/Serverless
-// สิ่งที่ทำ: อ่านรายชื่อกลุ่มจาก data/symbols.json → ดึงราคา/แท่งเทียน → คำนวณ EMA/RSI/MACD + Breakout
-// คัดเฉพาะ Strong Buy / Buy / Sell เท่านั้น → เขียนผลลง signals.json บน GitHub → ส่ง Telegram อัตโนมัติ
+// /api/run-scan.js
+export const config = { runtime: 'edge' };
 
-import { readJson, writeJson } from './_github.js';
-
-// =============== ENV ===============
-const GH_PATH_SIGNALS = process.env.GH_PATH_SIGNALS || 'api/signals.json';
-const GH_PATH_SETTINGS = process.env.GH_PATH_SETTINGS || 'api/settings.json';
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-// throttle เพื่อไม่ให้ยิงเร็วเกิน (มิลลิวินาที/ต่อ 1 symbol)
-const PER_SYMBOL_DELAY_MS = 400;
-
-// =============== Utils ===============
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const nowISO = () => new Date().toISOString();
-
-function ema(values, length) {
-  const k = 2 / (length + 1);
-  let emaPrev = values[0];
-  const out = [emaPrev];
-  for (let i = 1; i < values.length; i++) {
-    emaPrev = values[i] * k + emaPrev * (1 - k);
-    out.push(emaPrev);
-  }
-  return out;
+// ===== Helper: fetch JSON safely =====
+async function getJSON(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`);
+  return r.json();
 }
 
-function rsi(values, length = 14) {
-  if (values.length < length + 1) return [];
-  let gains = 0, losses = 0;
-  for (let i = 1; i <= length; i++) {
-    const chg = values[i] - values[i - 1];
-    if (chg >= 0) gains += chg; else losses -= chg;
-  }
-  let avgGain = gains / length, avgLoss = losses / length;
+// ===== Yahoo fetcher (DAY / WEEK) =====
+// interval: '1d' | '1wk'
+// range:    '6mo' | '1y' | '2y'
+async function getYahooSeries(symbol, interval = '1d', range = '1y') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+    symbol
+  )}?interval=${interval}&range=${range}`;
+  const j = await getJSON(url);
+  const r = j?.chart?.result?.[0];
+  if (!r) throw new Error(`No chart for ${symbol}`);
+  const closes = r.indicators?.quote?.[0]?.close || [];
+  return closes.filter((x) => typeof x === 'number');
+}
+
+// ===== Technicals =====
+function ema(arr, period) {
+  const k = 2 / (period + 1);
   const out = [];
-  out[length] = 100 - 100 / (1 + (avgGain / (avgLoss || 1e-9)));
-  for (let i = length + 1; i < values.length; i++) {
-    const chg = values[i] - values[i - 1];
-    const gain = chg > 0 ? chg : 0;
-    const loss = chg < 0 ? -chg : 0;
-    avgGain = (avgGain * (length - 1) + gain) / length;
-    avgLoss = (avgLoss * (length - 1) + loss) / length;
-    const rs = avgGain / (avgLoss || 1e-9);
-    out[i] = 100 - 100 / (1 + rs);
+  let prev = arr[0];
+  out.push(prev);
+  for (let i = 1; i < arr.length; i++) {
+    const v = arr[i] * k + prev * (1 - k);
+    out.push(v);
+    prev = v;
   }
   return out;
 }
 
-function macd(values, fast = 12, slow = 26, signal = 9) {
-  const emaFast = ema(values, fast);
-  const emaSlow = ema(values, slow);
-  const macdLine = values.map((_, i) =>
-    (emaFast[i] !== undefined && emaSlow[i] !== undefined) ? (emaFast[i] - emaSlow[i]) : undefined
-  );
-  const valid = macdLine.filter(v => v !== undefined);
-  const start = macdLine.findIndex(v => v !== undefined);
-  const signalLineAll = ema(valid, signal);
-  const signalLine = macdLine.map((v, i) => (i >= start ? signalLineAll[i - start] : undefined));
-  const hist = macdLine.map((v, i) => (v !== undefined && signalLine[i] !== undefined ? v - signalLine[i] : undefined));
-  return { macdLine, signalLine, hist };
-}
-
-// Yahoo Finance (unofficial) สำหรับหุ้น/ETF/ทอง
-async function fetchYahooDaily(ticker, years = 2) {
-  const range = `${years}y`;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d`;
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!r.ok) throw new Error(`Yahoo fetch failed ${r.status}`);
-  const j = await r.json();
-  const result = j?.chart?.result?.[0];
-  const closes = result?.indicators?.quote?.[0]?.close || [];
-  return closes.filter(x => typeof x === 'number');
-}
-
-// Binance spot สำหรับคริปโท (เช่น BTCUSDT)
-async function fetchBinanceDaily(symbol, limit = 300) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=${limit}`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`Binance fetch failed ${r.status}`);
-  const arr = await r.json();
-  // close = index 4
-  return arr.map(k => parseFloat(k[4]));
-}
-
-// ตัดสินใจสัญญาณตาม logic Pine ที่คุณให้: EMA cross + MACD + RSI + Breakout แบบง่าย
-function decideSignalFromCloses(closes) {
-  if (!closes || closes.length < 60) return null;
-  const fastLen = 9, slowLen = 21, rsiLen = 14, macdFast = 12, macdSlow = 26, macdSig = 9, volLook = 20, breakoutLook = 20;
-
-  // ใช้ราคาแทน volume/EMA ของ volume (ที่นี่ไม่มี volume → ไม่ใช้เงื่อนไข volume)
-  const emaFast = ema(closes, fastLen);
-  const emaSlow = ema(closes, slowLen);
-  const { macdLine, signalLine } = macd(closes, macdFast, macdSlow, macdSig);
-  const rsiArr = rsi(closes, rsiLen);
-
-  const i = closes.length - 1;
-  const priorHigh = Math.max(...closes.slice(Math.max(0, i - breakoutLook), i));
-  const breakout = closes[i] > priorHigh;
-
-  const emaCrossUp = emaFast[i] > emaSlow[i] && emaFast[i - 1] <= emaSlow[i - 1];
-  const emaCrossDown = emaFast[i] < emaSlow[i] && emaFast[i - 1] >= emaSlow[i - 1];
-  const macdAbove = macdLine[i] !== undefined && signalLine[i] !== undefined && macdLine[i] > signalLine[i];
-  const macdBelow = macdLine[i] !== undefined && signalLine[i] !== undefined && macdLine[i] < signalLine[i];
-  const rsiVal = rsiArr[i] ?? 50;
-
-  const buy = emaCrossUp && macdAbove && rsiVal < 70;
-  const strongBuy = buy && breakout;
-  const sell = emaCrossDown || macdBelow || rsiVal > 80;
-
-  if (strongBuy) return 'Strong Buy';
-  if (buy) return 'Buy';
-  if (sell) return 'Sell';
-  return null;
-}
-
-async function getClosesBySymbol(sym) {
-  // ถ้าเป็นคริปโท (ลงท้าย USDT) ให้ไป Binance, ถ้าไม่ใช่ ไป Yahoo
-  if (/USDT$/i.test(sym)) {
-    return await fetchBinanceDaily(sym);
-  } else {
-    return await fetchYahooDaily(sym);
+function rsi(arr, period = 14) {
+  if (arr.length < period + 1) return Array(arr.length).fill(50);
+  const gains = [];
+  const losses = [];
+  for (let i = 1; i < arr.length; i++) {
+    const diff = arr[i] - arr[i - 1];
+    gains.push(Math.max(0, diff));
+    losses.push(Math.max(0, -diff));
   }
+  const avgGain = ema(gains, period);
+  const avgLoss = ema(losses, period);
+  const out = [50];
+  for (let i = 1; i < avgGain.length; i++) {
+    const ag = avgGain[i];
+    const al = avgLoss[i];
+    const rs = al === 0 ? 100 : ag / al;
+    out.push(100 - 100 / (1 + rs));
+  }
+  // align length
+  while (out.length < arr.length) out.unshift(50);
+  return out;
 }
 
-async function telegramNotify(text) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+function macd(arr, fast = 12, slow = 26, signal = 9) {
+  const emaFast = ema(arr, fast);
+  const emaSlow = ema(arr, slow);
+  const macdLine = arr.map((_, i) => (emaFast[i] ?? 0) - (emaSlow[i] ?? 0));
+  const signalLine = ema(macdLine, signal);
+  return { macdLine, signalLine };
+}
+
+function highest(arr, lookback) {
+  if (arr.length < lookback) return Number.NEGATIVE_INFINITY;
+  let max = arr[arr.length - lookback];
+  for (let i = arr.length - lookback + 1; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i];
+  }
+  return max;
+}
+
+function crossover(aPrev, aNow, bPrev, bNow) {
+  return aPrev <= bPrev && aNow > bNow;
+}
+function crossunder(aPrev, aNow, bPrev, bNow) {
+  return aPrev >= bPrev && aNow < bNow;
+}
+
+// ===== GitHub read/write via _github helper =====
+async function ghRead(path) {
+  const base = `${process.env.NEXT_PUBLIC_API_BASE || 'https://signal-dashboard-ui.vercel.app'}/api/_github?op=read&path=${encodeURIComponent(path)}`;
+  const j = await getJSON(base);
+  return j;
+}
+
+async function ghWrite(path, contentObj) {
+  const base = `${process.env.NEXT_PUBLIC_API_BASE || 'https://signal-dashboard-ui.vercel.app'}/api/_github`;
+  const r = await fetch(base, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ op: 'write', path, content: JSON.stringify(contentObj, null, 2) })
+  });
+  if (!r.ok) {
+    throw new Error(`GitHub write failed: ${await r.text()}`);
+  }
+  return r.json();
+}
+
+// ===== Telegram =====
+async function pushTelegram(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
   await fetch(url, {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' })
-  }).catch(()=>{});
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text })
+  });
 }
 
-// =============== MAIN HANDLER ===============
-export default async function handler(req, res) {
+async function scanOne(symbol) {
+  // DAY
+  const day = await getYahooSeries(symbol, '1d', '1y');
+  if (day.length < 60) return null;
+
+  const ema9 = ema(day, 9);
+  const ema21 = ema(day, 21);
+  const { macdLine, signalLine } = macd(day, 12, 26, 9);
+  const rsi14 = rsi(day, 14);
+  const last = day.length - 1;
+
+  const isCrossUp = crossover(ema9[last - 1], ema9[last], ema21[last - 1], ema21[last]);
+  const isCrossDn = crossunder(ema9[last - 1], ema9[last], ema21[last - 1], ema21[last]);
+  const macdAbove = macdLine[last] > signalLine[last];
+  const macdBelow = macdLine[last] < signalLine[last];
+  const rsiLo = rsi14[last] < 70;
+  const rsiHi = rsi14[last] > 80;
+
+  // Breakout 20 แท่งย้อนหลัง (ดูจากราคาปิด)
+  const priorHigh = highest(day.slice(0, -1), 20);
+  const isBreakout = day[last] > priorHigh;
+
+  let signal = '-';
+  if (isCrossUp && macdAbove && rsiLo) {
+    signal = isBreakout ? 'Strong Buy' : 'Buy';
+  } else if (isCrossDn || macdBelow || rsiHi) {
+    signal = 'Sell';
+  }
+
+  // WEEK (optional — ใช้ประกอบแจ้งเตือน)
+  const week = await getYahooSeries(symbol, '1wk', '2y');
+  let signalW = '-';
+  if (week.length > 60) {
+    const e9 = ema(week, 9);
+    const e21 = ema(week, 21);
+    const { macdLine: mW, signalLine: sW } = macd(week, 12, 26, 9);
+    const rW = rsi(week, 14);
+    const L = week.length - 1;
+    const upW = crossover(e9[L - 1], e9[L], e21[L - 1], e21[L]);
+    const dnW = crossunder(e9[L - 1], e9[L], e21[L - 1], e21[L]);
+    const macdUp = mW[L] > sW[L];
+    const macdDn = mW[L] < sW[L];
+    const rLo = rW[L] < 70;
+    const rHi = rW[L] > 80;
+    const pHigh = highest(week.slice(0, -1), 20);
+    const bo = week[L] > pHigh;
+    if (upW && macdUp && rLo) signalW = bo ? 'Strong Buy' : 'Buy';
+    else if (dnW || macdDn || rHi) signalW = 'Sell';
+  }
+
+  return {
+    ticker: symbol,
+    signal,
+    signalW,
+    price: Number(day[last].toFixed(2)),
+    timeframe: '1D'
+  };
+}
+
+export default async function handler(req) {
   try {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const group = url.searchParams.get('group')?.toLowerCase();
+    const { searchParams } = new URL(req.url);
+    const group = (searchParams.get('group') || '').trim();
+    const manual = searchParams.get('manual') === '1'; // manual override
+
     if (!group) {
-      return res.status(400).json({ error: 'ต้องใส่ ?group=...' });
+      return new Response(JSON.stringify({ error: 'ต้องใส่ ?group=...' }, null, 2), { status: 400 });
     }
 
-    // โหลดรายการ symbols
-    const symbolsJson = await readJson('data/symbols.json'); // เราอ่านจากไฟล์ใน repo นี้เลย
-    const list = symbolsJson[group];
+    // 1) โหลด settings เพื่อเช็คสวิตช์
+    //    ตัวอย่าง settings.json:
+    //    { "auto_scan_enabled": true, "auto_scan_groups": ["sp500","nasdaq100"] }
+    const settings = await ghRead(process.env.GH_PATH_SETTINGS || 'api/settings.json');
+
+    // ถ้าเป็นการรันจาก Cron (ไม่ใส่ manual=1) และปิดออโต้ไว้ → ยกเลิก
+    if (!manual && settings && settings.auto_scan_enabled === false) {
+      return new Response(JSON.stringify({ skipped: true, reason: 'auto_scan_disabled' }, null, 2), { status: 200 });
+    }
+
+    // 2) โหลด symbol list ของกลุ่ม
+    const symbolsData = await ghRead('data/symbols.json');
+    const list = symbolsData?.[group];
     if (!Array.isArray(list) || list.length === 0) {
-      return res.status(404).json({ error: `ไม่พบกลุ่ม ${group} ใน data/symbols.json` });
+      return new Response(
+        JSON.stringify({ error: `ไม่พบกลุ่ม ${group} ใน data/symbols.json` }, null, 2),
+        { status: 400 }
+      );
     }
 
-    // สแกนทีละตัว + หน่วงเวลาเล็กน้อย
-    const out = [];
-    for (const ticker of list) {
+    // 3) สแกนทีละตัว (ถ้าจำนวนมากค่อยเพิ่ม throttle/batch)
+    const results = [];
+    for (const sym of list) {
       try {
-        const closes = await getClosesBySymbol(ticker);
-        const sig = decideSignalFromCloses(closes);
-        if (sig) {
-          out.push({
-            ticker,
-            signal: sig,
-            price: Number(closes[closes.length - 1].toFixed(2)),
-            timeframe: '1D'
-          });
-          if (sig === 'Strong Buy' || sig === 'Buy') {
-            await telegramNotify(`✅ <b>${sig}</b> ${ticker} @ ${out[out.length-1].price} (TF 1D, group ${group})`);
-          }
+        const r = await scanOne(sym);
+        if (r && r.signal && r.signal !== '-') {
+          results.push(r);
         }
       } catch (e) {
-        // ข้ามตัวที่ดึงไม่ได้/ล้มเหลว
+        // เงียบไว้ — ข้ามตัวที่ดึงไม่ได้
       }
-      await sleep(PER_SYMBOL_DELAY_MS);
     }
 
-    // โหลด/ผนวกผลเดิม (กันกรณี UI แสดงกลุ่มล่าสุด)
-    const current = await readJson(GH_PATH_SIGNALS).catch(() => ({ group: '-', updatedAt: null, results: [] }));
-    const next = { group, updatedAt: nowISO(), results: out };
+    // 4) บันทึกไฟล์ signals.json (เฉพาะรายการที่มีสัญญาณเท่านั้น)
+    const payload = {
+      group,
+      updatedAt: new Date().toISOString(),
+      results
+    };
+    await ghWrite(process.env.GH_PATH_SIGNALS || 'api/signals.json', payload);
 
-    await writeJson(GH_PATH_SIGNALS, next);
+    // 5) แจ้งเตือน Telegram เฉพาะ Strong Buy/Buy (1D/1W)
+    const toNotify = results.filter((x) => x.signal === 'Strong Buy' || x.signal === 'Buy');
+    if (toNotify.length > 0) {
+      const lines = [
+        `📣 Scan ${group} @ ${payload.updatedAt}`,
+        ...toNotify.map(
+          (x) => `• ${x.ticker} — ${x.signal} (price ${x.price})`
+        )
+      ];
+      await pushTelegram(lines.join('\n'));
+    }
 
-    return res.json(next);
-  } catch (err) {
-    return res.status(500).json({ error: 'scan failed', detail: String(err) });
+    return new Response(JSON.stringify(payload, null, 2), {
+      headers: { 'content-type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'scan failed', detail: String(e) }, null, 2), { status: 500 });
   }
 }
