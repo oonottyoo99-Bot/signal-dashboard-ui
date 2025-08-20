@@ -1,31 +1,25 @@
-// api/signals.js
-import { readJsonFile, writeJsonFile, PATHS, withCors } from "./_github";
-
-const defaultSignals = {
-  last_updated: "-",
-  scan_group: "-",
-  signals_found: [],
-};
-
+// /api/signals.js
 export default async function handler(req, res) {
-  withCors(res);
-  if (req.method === "OPTIONS") return res.status(204).end();
-
   try {
-    if (req.method === "GET") {
-      const data = await readJsonFile(PATHS.GH_PATH_SIGNALS, defaultSignals);
-      return res.status(200).json(data);
-    }
+    const repo = process.env.GH_REPO;
+    const branch = process.env.GH_BRANCH || "main";
+    const path = process.env.GH_PATH_SIGNALS || "signals.json";
+    const token = process.env.GH_TOKEN;
 
-    if (req.method === "POST") {
-      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-      const payload = body && typeof body === "object" ? body : defaultSignals;
-      await writeJsonFile(PATHS.GH_PATH_SIGNALS, payload, "update signals.json");
-      return res.status(200).json({ ok: true });
+    const url = `https://raw.githubusercontent.com/${repo}/${branch}/${encodeURIComponent(path)}?t=${Date.now()}`;
+    const r = await fetch(url, token ? { headers: { Authorization: `token ${token}` } } : {});
+    if (!r.ok) {
+      // ยังไม่มีไฟล์ -> ส่งโครงเริ่มต้นกลับไป
+      return res.status(200).json({
+        group: "-",
+        updatedAt: null,
+        results: [],
+      });
     }
-
-    return res.status(405).json({ error: "Method Not Allowed" });
-  } catch (e) {
-    return res.status(500).json({ error: String(e?.message || e) });
+    const json = await r.json();
+    return res.status(200).json(json);
+  } catch (err) {
+    console.error("GET /api/signals error:", err);
+    return res.status(500).json({ error: "Cannot read signals", detail: String(err) });
   }
 }
