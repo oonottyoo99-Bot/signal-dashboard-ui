@@ -1,80 +1,99 @@
-// /api/_github.js
-export default async function handler(req, res) {
+// api/_github.js
+// ยูทิลสำหรับอ่าน/เขียนไฟล์ใน GitHub repo ของคุณ
+// ใช้ได้ทั้งอ่านไฟล์ธรรมดา (ผ่าน raw.githubusercontent.com) และเขียนด้วย GitHub REST API
+
+const GH_TOKEN = process.env.GH_TOKEN;
+const GH_REPO = process.env.GH_REPO;        // ตัวอย่าง: "oonottyoo99-Bot/signal-dashboard-ui"
+const GH_BRANCH = process.env.GH_BRANCH || "main";
+
+/** raw URL ของไฟล์ใน repo */
+function rawUrl(path) {
+  // path ห้ามขึ้นด้วย "/" (ให้เป็น data/symbols.json, api/signals.json ฯลฯ)
+  const p = String(path).replace(/^\/+/, "");
+  return `https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}/${encodeURI(p)}`;
+}
+
+/** GitHub REST API base */
+function apiUrl(path) {
+  const p = String(path).replace(/^\/+/, "");
+  return `https://api.github.com/repos/${GH_REPO}/contents/${encodeURI(p)}`;
+}
+
+/** helper fetch JSON (โยน error พร้อม detail ถ้าไม่ได้ 2xx) */
+async function fetchJson(url, init = {}) {
+  const r = await fetch(url, init);
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    const msg = `HTTP ${r.status} ${url}${text ? ` :: ${text.slice(0, 300)}` : ""}`;
+    throw new Error(msg);
+  }
+  const ct = r.headers.get("content-type") || "";
+  return ct.includes("application/json") ? r.json() : r.text();
+}
+
+/** อ่านไฟล์ “ดิบ” จาก GitHub (raw) แล้ว parse JSON อัตโนมัติถ้าเป็น JSON */
+export async function ghRead(path, { as = "json" } = {}) {
+  const url = rawUrl(path);
   try {
-    const {
-      GH_TOKEN = process.env.GH_TOKEN,
-      GH_REPO  = process.env.GH_REPO,   // รูปแบบ: owner/repo
-      GH_BRANCH = process.env.GH_BRANCH || "main",
-    } = process.env;
-
-    if (!GH_TOKEN || !GH_REPO) {
-      return res.status(400).json({ error: "Missing GH_TOKEN or GH_REPO" });
-    }
-
-    const op   = (req.query.op || req.body?.op || "read").toLowerCase();
-    const path = req.query.path || req.body?.path;
-    if (!path) return res.status(400).json({ error: "Missing ?path=…" });
-
-    const api = "https://api.github.com";
-
-    async function ghFetch(url, opts = {}) {
-      const r = await fetch(url, {
-        ...opts,
-        headers: {
-          "Authorization": `Bearer ${GH_TOKEN}`,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json",
-          ...opts.headers,
-        },
-        next: { revalidate: 0 },
-      });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(`HTTP ${r.status} ${url} :: ${text}`);
-      }
-      return r.json();
-    }
-
-    async function readFile(p) {
-      const u = `${api}/repos/${GH_REPO}/contents/${encodeURIComponent(p)}?ref=${encodeURIComponent(GH_BRANCH)}`;
-      const j = await ghFetch(u);
-      const buff = Buffer.from(j.content, "base64").toString("utf8");
-      return { content: buff, sha: j.sha };
-    }
-
-    async function writeFile(p, content) {
-      // ดูว่าไฟล์มีอยู่ไหม เพื่อเอา sha
-      let sha = undefined;
-      try {
-        const cur = await readFile(p);
-        sha = cur.sha;
-      } catch (e) {
-        // ไม่มีไฟล์ (201 จะถูกใช้ตอนสร้างใหม่)
-      }
-      const u = `${api}/repos/${GH_REPO}/contents/${encodeURIComponent(p)}`;
-      const body = {
-        message: `update ${p} by signal-dashboard-ui`,
-        content: Buffer.from(content, "utf8").toString("base64"),
-        branch: GH_BRANCH,
-        ...(sha ? { sha } : {}),
-      };
-      const j = await ghFetch(u, { method: "PUT", body: JSON.stringify(body) });
-      return j;
-    }
-
-    if (op === "read") {
-      const { content } = await readFile(path);
-      return res.status(200).send(content); // ส่ง raw
-    } else if (op === "write") {
-      const raw = typeof req.body?.content === "string"
-        ? req.body.content
-        : JSON.stringify(req.body?.content ?? {}, null, 2);
-      const j = await writeFile(path, raw);
-      return res.status(200).json({ ok: true, path, commit: j.commit?.sha });
-    } else {
-      return res.status(400).json({ error: `Unsupported op: ${op}` });
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (as === "text") return await res.text();
+    // json
+    const txt = await res.text();
+    try {
+      return JSON.parse(txt);
+    } catch (_) {
+      // ถ้า parse ไม่ได้และ as=json ให้โยน error ชัดๆ
+      throw new Error(`Invalid JSON at ${path}`);
     }
   } catch (e) {
-    return res.status(500).json({ error: String(e.message || e) });
+    throw new Error(`ghRead ${path} -> ${e.message}`);
+  }
+}
+
+/** ดึง sha ปัจจุบันของไฟล์ (เพื่อ update contents) ถ้าไม่มีให้คืน null */
+async function getSha(path) {
+  try {
+    const data = await fetchJson(apiUrl(path), {
+      headers: {
+        Authorization: `token ${GH_TOKEN}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+    return data && data.sha ? data.sha : null;
+  } catch (e) {
+    // ถ้า 404 ให้ถือว่าไฟล์ยังไม่มี
+    const msg = String(e.message || "");
+    if (msg.includes("HTTP 404")) return null;
+    throw e;
+  }
+}
+
+/** เขียนไฟล์ JSON/ข้อความ กลับเข้า GitHub (commit ใหม่) */
+export async function ghWrite(path, content, { message = "update via API" } = {}) {
+  const now = new Date().toISOString();
+  const bodyText = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+  const sha = await getSha(path);
+
+  const body = {
+    message,
+    content: Buffer.from(bodyText, "utf8").toString("base64"),
+    branch: GH_BRANCH,
+  };
+  if (sha) body.sha = sha;
+
+  try {
+    await fetchJson(apiUrl(path), {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${GH_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    return { ok: true, path, at: now };
+  } catch (e) {
+    throw new Error(`ghWrite ${path} -> ${e.message}`);
   }
 }
