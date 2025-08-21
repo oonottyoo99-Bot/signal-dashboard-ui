@@ -1,6 +1,6 @@
 {
   "crons": [
-    { "path": "/api/auto-scan", "schedule": "0 2 * * *"  },  // 09:00 น. ICT
-    { "path": "/api/auto-scan", "schedule": "0 14 * * *" }  // 21:00 น. ICT
+    { "path": "/api/auto-scan", "schedule": "0 2 * * *" },
+    { "path": "/api/auto-scan", "schedule": "0 14 * * *" }
   ]
 }
