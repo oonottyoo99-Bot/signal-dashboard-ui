@@ -1,97 +1,119 @@
-// api/_github.js
-// ------------------------------------------------------
-// GitHub content helper (อ่าน/เขียนไฟล์ใน repo)
-// - REPO_MAIN:   ใช้กับ signals.json / settings.json
-// - REPO_SYMBOL: ใช้กับ data/symbols.json (ถ้าไม่ตั้ง จะ fallback ไป REPO_MAIN)
-// ------------------------------------------------------
+// /api/_github.js
 
-const REPO_MAIN   = process.env.GH_REPO;                   // ex: oonottyoo99-Bot/Alert
-const REPO_SYMBOL = process.env.GH_REPO_SYMBOLS || REPO_MAIN; // ex: oonottyoo99-Bot/signal-dashboard-ui
-const BRANCH      = process.env.GH_BRANCH || "main";
-const TOKEN       = process.env.GH_TOKEN;
+export const config = { runtime: 'nodejs' }; // ให้ Vercel สร้าง route ปกติ
 
-function pickRepo(path = "") {
-  // ถ้า path อยู่ใต้โฟลเดอร์ data/ ให้ใช้ REPO_SYMBOL
-  if (path.startsWith("data/")) return REPO_SYMBOL;
-  return REPO_MAIN;
+const GH_API = 'https://api.github.com';
+
+function pickRepo(repoQuery, env) {
+  // ?repo=symbols => อ่านจาก GH_REPO_SYMBOLS; นอกนั้นใช้ GH_REPO
+  if (repoQuery === 'symbols') return env.GH_REPO_SYMBOLS || env.GH_REPO;
+  return env.GH_REPO;
 }
 
-async function ghRequest(method, url, bodyObj) {
+async function ghFetch(env, path, method = 'GET', body = undefined, repoQuery = '') {
+  const repo = pickRepo(repoQuery, env);
+  const branch = env.GH_BRANCH || 'main';
+  const token = env.GH_TOKEN;
+  if (!repo) throw new Error('GH_REPO not set');
+  if (!token) throw new Error('GH_TOKEN not set');
+
+  const url = `${GH_API}/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`;
+
   const headers = {
-    "Accept": "application/vnd.github.v3+json",
-    "Content-Type": "application/json"
+    'Authorization': `token ${token}`,
+    'User-Agent': 'signal-dashboard-ui',
+    'Accept': 'application/vnd.github+json',
   };
-  if (TOKEN) headers.Authorization = `token ${TOKEN}`;
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: bodyObj ? JSON.stringify(bodyObj) : undefined,
-    cache: "no-store",
-  });
-
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${txt}`);
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status} ${text}`);
   }
   return res.json();
 }
 
-// อ่านไฟล์ (คืนค่าเป็น string)
-export async function ghRead(path) {
-  const repo = pickRepo(path);
-  const url = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(BRANCH)}`;
-  const j = await ghRequest("GET", url);
-  const base64 = (j.content || "").replace(/\n/g, "");
-  return Buffer.from(base64, "base64").toString("utf8");
+async function ghRead(env, path, repoQuery = '') {
+  const data = await ghFetch(env, path, 'GET', undefined, repoQuery);
+  // GitHub returns base64 content
+  if (!data || !data.content) throw new Error('invalid GitHub response');
+  const buff = Buffer.from(data.content, 'base64');
+  return buff.toString('utf8');
 }
 
-// เขียนไฟล์ (อัปเดตถ้ามี, สร้างถ้ายังไม่มี)
-export async function ghWrite(path, content, message = `update ${path}`) {
-  const repo = pickRepo(path);
-  const getUrl = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(BRANCH)}`;
+async function ghWrite(env, path, content, message, sha = undefined, repoQuery = '') {
+  const repo = pickRepo(repoQuery, env);
+  const branch = env.GH_BRANCH || 'main';
+  const token = env.GH_TOKEN;
+  if (!repo) throw new Error('GH_REPO not set');
+  if (!token) throw new Error('GH_TOKEN not set');
 
-  let sha;
-  try {
-    const meta = await ghRequest("GET", getUrl);
-    sha = meta.sha;
-  } catch {
-    // 404 -> create new
-  }
+  const url = `${GH_API}/repos/${repo}/contents/${encodeURIComponent(path)}`;
 
-  const putUrl = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`;
-  const body = {
-    message,
-    content: Buffer.from(content, "utf8").toString("base64"),
-    branch: BRANCH,
-    sha,
+  const headers = {
+    'Authorization': `token ${token}`,
+    'User-Agent': 'signal-dashboard-ui',
+    'Accept': 'application/vnd.github+json',
+    'Content-Type': 'application/json',
   };
-  return ghRequest("PUT", putUrl, body);
+
+  const body = {
+    message: message || `update ${path}`,
+    content: Buffer.from(content, 'utf8').toString('base64'),
+    branch,
+  };
+  if (sha) body.sha = sha;
+
+  const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status} ${text}`);
+  }
+  return res.json();
 }
 
-// HTTP handler (debug/manual test): /api/_github?op=read&path=...  หรือ  op=write&path=...&content=...
 export default async function handler(req, res) {
   try {
-    const { op, path, content } = req.query;
+    const { searchParams } = new URL(req.url, 'http://localhost');
+    const op = searchParams.get('op') || 'ping';
+    const path = searchParams.get('path') || '';
+    const repoQuery = searchParams.get('repo') || '';
 
-    if (op === "read") {
-      if (!path) return res.status(400).json({ ok: false, error: "missing path" });
-      const text = await ghRead(path);
-      // ส่งเป็น text ตรง ๆ (สะดวกเปิดดู contents)
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.status(200).send(text);
-      return;
+    if (op === 'ping') {
+      return res.status(200).json({ ok: true, repo: pickRepo(repoQuery, process.env) });
     }
 
-    if (op === "write") {
-      if (!path) return res.status(400).json({ ok: false, error: "missing path" });
-      await ghWrite(path, content || "", `update via api/_github`);
-      res.status(200).json({ ok: true });
-      return;
+    if (op === 'read') {
+      if (!path) return res.status(400).json({ ok: false, error: 'missing path' });
+      const text = await ghRead(process.env, path, repoQuery);
+      // พยายาม parse เป็น JSON ก่อน ถ้าไม่ใช่ก็ส่งเป็น text
+      try {
+        return res.status(200).json(JSON.parse(text));
+      } catch {
+        return res.status(200).send(text);
+      }
     }
 
-    res.status(400).json({ ok: false, error: "unknown op" });
+    if (op === 'write') {
+      if (!path) return res.status(400).json({ ok: false, error: 'missing path' });
+      const content = searchParams.get('content') || '';
+      const message = searchParams.get('message') || '';
+      const result = await ghWrite(process.env, path, content, message, undefined, repoQuery);
+      return res.status(200).json({ ok: true, result });
+    }
+
+    return res.status(400).json({ ok: false, error: `unknown op: ${op}` });
   } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
+    return res.status(500).json({ ok: false, error: String(e.message || e) });
   }
+}
+
+// ===== helper (ให้ serverless อื่น import ใช้ได้) =====
+export async function readJsonFromGitHub(path, repoQuery = '') {
+  const text = await ghRead(process.env, path, repoQuery);
+  return JSON.parse(text);
+}
+export async function writeJsonToGitHub(path, obj, message, repoQuery = '') {
+  const content = JSON.stringify(obj, null, 2);
+  return ghWrite(process.env, path, content, message, undefined, repoQuery);
 }
