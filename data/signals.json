@@ -1,39 +1,9 @@
 {
-  "group": "nasdaq100",
-  "updatedAt": "2025-08-23T06:37:38.090Z",
+  "group": "sp500",
+  "updatedAt": "2025-08-23T13:49:18.015Z",
   "results": [
     {
-      "ticker": "AMZN",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "TSLA",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "GOOGL",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "QQQ",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "META",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "NVDA",
+      "ticker": "AAPL",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
@@ -45,19 +15,49 @@
       "timeframe": "1D"
     },
     {
-      "ticker": "AAPL",
+      "ticker": "NVDA",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "ADBE",
+      "ticker": "META",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "NFLX",
+      "ticker": "SPY",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "AMZN",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "GOOGL",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "AVGO",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "XOM",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "BRK-B",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
