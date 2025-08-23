@@ -1,252 +1,213 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Signal Scanner Dashboard</title>
-
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet"/>
-
   <style>
-    body { font-family: 'Sarabun', sans-serif; background-color: #0a0a0a;
-           background-image: radial-gradient(circle at 1px 1px, #333 1px, transparent 0);
-           background-size: 25px 25px; }
-    .scan-button, .tab-button { transition: all 0.2s ease-in-out; }
-    .scan-button:disabled { cursor: not-allowed; filter: grayscale(80%); opacity: 0.5; }
-    .scan-button:not(:disabled):hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.2); }
-    .loader { border-top-color: #ffffff; animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .gradient-text { background: linear-gradient(to right, #2dd4bf, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .custom-checkbox:checked { background-color: #2dd4bf; border-color: #2dd4bf; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial; color:#e5e7eb; background:#0b0f14}
+    .wrap{max-width:1100px; margin:32px auto; padding:0 16px}
+    h1{color:#22d3ee; font-size:32px; margin:0 0 20px}
+    .card{background:#10161d; border:1px solid #1f2937; border-radius:12px; padding:18px; margin:16px 0}
+    .row{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+    .label{display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #273244; border-radius:8px; background:#0f1620}
+    .btn{appearance:none; border:0; background:#16a34a; color:white; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:600}
+    .btn[disabled]{opacity:.5; cursor:not-allowed}
+    .btn-alt{background:#334155}
+    .btn-run{background:#0ea5e9}
+    .section-title{font-size:18px; font-weight:700; margin-bottom:10px}
+    table{width:100%; border-collapse:collapse; margin-top:10px; font-size:14px}
+    th,td{padding:10px 12px; border-bottom:1px solid #1f2937}
+    th{color:#93c5fd; text-align:left; background:#0f172a}
+    .muted{color:#94a3b8; font-size:12px}
+    .pill{display:inline-block; padding:2px 8px; border-radius:999px; background:#1f2937}
+    .right{margin-left:auto}
+    .toast{position:fixed; right:16px; top:16px; background:#0b1220; color:#e5e7eb; border:1px solid #1e293b; border-radius:10px; padding:10px 14px; box-shadow:0 10px 20px rgba(0,0,0,.35); z-index:50}
+    .warn{background:#7c2d12; border-color:#9a3412}
+    .ok{background:#065f46; border-color:#0f766e}
+    code{background:#0b1220; padding:2px 6px; border-radius:6px}
   </style>
 </head>
+<body>
+  <div class="wrap">
+    <h1>Signal Scanner Dashboard</h1>
 
-<body class="text-gray-200">
-  <div id="root"></div>
+    <!-- Auto-Scan settings -->
+    <div class="card">
+      <div class="section-title">ตั้งค่าสแกนอัตโนมัติ (Auto-Scan)</div>
+      <div class="row" id="auto-groups">
+        <!-- กลุ่มที่รองรับ: ใช้ key ให้ตรงกับ data/symbols.json -->
+        <label class="label"><input type="checkbox" data-auto-group="sp500"> S&amp;P 500</label>
+        <label class="label"><input type="checkbox" data-auto-group="nasdaq100"> Nasdaq 100</label>
+        <label class="label"><input type="checkbox" data-auto-group="altcoins"> Altcoins (OKX)</label>
+        <label class="label"><input type="checkbox" data-auto-group="binance_top200"> Binance Top 200</label>
+        <label class="label"><input type="checkbox" data-auto-group="okx_top200"> OKX Top 200</label>
+        <label class="label"><input type="checkbox" data-auto-group="bitkub"> Bitkub</label>
+        <label class="label"><input type="checkbox" data-auto-group="set50"> SET50</label>
+        <label class="label"><input type="checkbox" data-auto-group="set100"> SET100</label>
+        <label class="label"><input type="checkbox" data-auto-group="etf"> ETFs</label>
+        <label class="label"><input type="checkbox" data-auto-group="gold"> ทองคำ</label>
 
-  <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+        <button id="btn-save" class="btn right">บันทึกการตั้งค่า</button>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        ใช้ร่วมกับ Cron ได้ — ระบบจะสแกนเฉพาะกลุ่มที่เลือกไว้ในไฟล์ <code>data/settings.json</code>
+      </div>
+    </div>
 
-    // เรียก API แบบ same-origin (อยู่โดเมนเดียวกัน)
-    const apiBase = ""; // เว้นว่างไว้ ใช้ path เริ่มด้วย /api ได้เลย
+    <!-- Manual Scan -->
+    <div class="card">
+      <div class="section-title">สั่งสแกนด้วยตนเอง (Manual Scan)</div>
+      <div class="row">
+        <button class="btn btn-run" data-run="sp500">S&amp;P 500</button>
+        <button class="btn btn-run" data-run="nasdaq100">Nasdaq 100</button>
+        <button class="btn btn-run" data-run="altcoins">Altcoins (OKX)</button>
+        <button class="btn btn-run" data-run="binance_top200">Binance Top 200</button>
+        <button class="btn btn-run" data-run="okx_top200">OKX Top 200</button>
+        <button class="btn btn-run" data-run="bitkub">Bitkub</button>
+        <button class="btn btn-run" data-run="set50">SET50</button>
+        <button class="btn btn-run" data-run="set100">SET100</button>
+        <button class="btn btn-run" data-run="etf">ETFs</button>
+        <button class="btn btn-run" data-run="gold">ทองคำ</button>
+      </div>
+      <div id="manual-status" class="muted" style="margin-top:8px"></div>
+    </div>
 
-    const scanGroups = [
-      { id: 'sp500',     name: 'S&P 500',         color: 'blue'    },
-      { id: 'nasdaq100', name: 'Nasdaq 100',      color: 'indigo'  },
-      { id: 'altcoins',  name: 'Altcoins (OKX)',  color: 'amber'   },
-      { id: 'binance',   name: 'Binance Top 200', color: 'yellow'  },
-      { id: 'okx',       name: 'OKX Top 200',     color: 'cyan'    },
-      { id: 'bitkub',    name: 'Bitkub',          color: 'green'   },
-      { id: 'set50',     name: 'SET50',           color: 'emerald' },
-      { id: 'set100',    name: 'SET100',          color: 'rose'    },
-      { id: 'etf',       name: 'ETFs',            color: 'teal'    },
-      { id: 'gold',      name: 'ทองคำ',           color: 'yellow'  },
-    ];
+    <!-- Latest results -->
+    <div class="card">
+      <div class="row">
+        <div class="section-title">ผลการสแกนล่าสุด</div>
+        <button id="btn-refresh" class="btn btn-alt right">รีเฟรช</button>
+      </div>
+      <div class="muted" id="meta"></div>
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th style="width:25%">Ticker</th>
+            <th style="width:25%">Signal</th>
+            <th style="width:25%">Price</th>
+            <th style="width:25%">Timeframe</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="4" class="muted">ไม่มีข้อมูล</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-    const colorClasses = {
-      blue:'bg-blue-600 hover:bg-blue-500', indigo:'bg-indigo-600 hover:bg-indigo-500',
-      teal:'bg-teal-600 hover:bg-teal-500', amber:'bg-amber-600 hover:bg-amber-500',
-      emerald:'bg-emerald-600 hover:bg-emerald-500', rose:'bg-rose-600 hover:bg-rose-500',
-      yellow:'bg-yellow-500 hover:bg-yellow-400', cyan:'bg-cyan-600 hover:bg-cyan-500',
-      green:'bg-green-600 hover:bg-green-500'
-    };
+  <div id="toast" style="display:none"></div>
 
-    function App() {
-      const [signals, setSignals] = useState(null);
-      const [loading, setLoading] = useState(true);
-      const [error, setError] = useState(null);
+  <script>
+    const API_BASE = (window.NEXT_PUBLIC_API_BASE || location.origin).replace(/\/$/, "");
 
-      const [scanningGroup, setScanningGroup] = useState(null);
-      const [autoScanSelection, setAutoScanSelection] = useState({});
-      const [isSaving, setIsSaving] = useState(false);
+    // ---------- helpers ----------
+    function showToast(msg, type="ok") {
+      const el = document.getElementById("toast");
+      el.className = "toast " + (type === "ok" ? "ok" : "warn");
+      el.textContent = msg;
+      el.style.display = "block";
+      setTimeout(()=> el.style.display = "none", 2500);
+    }
+    function qsAll(sel){return Array.from(document.querySelectorAll(sel));}
 
-      // ------- fetchers
-      const fetchSignals = useCallback(async () => {
-        setLoading(true); setError(null);
-        try {
-          const r = await fetch(`${apiBase}/api/signals`, { cache:"no-store" });
-          if (!r.ok) throw new Error(`โหลด signals ไม่ได้: ${r.status}`);
-          setSignals(await r.json());
-        } catch (e) {
-          setError(e.message || String(e));
-        } finally { setLoading(false); }
-      }, []);
-
-      const fetchSettings = useCallback(async () => {
-        try {
-          const r = await fetch(`${apiBase}/api/settings`, { cache:"no-store" });
-          if (!r.ok) return;
-          const data = await r.json();
-          const m = {};
-          (data.auto_scan_groups || []).forEach(g => m[g] = true);
-          setAutoScanSelection(m);
-        } catch { /* ignore */ }
-      }, []);
-
-      useEffect(() => { fetchSignals(); fetchSettings(); }, [fetchSignals, fetchSettings]);
-
-      // ------- actions
-      const handleScan = async (groupId) => {
-        setScanningGroup(groupId);
-        try {
-          const r = await fetch(`${apiBase}/api/run-scan?group=${encodeURIComponent(groupId)}`);
-          if (!r.ok) throw new Error(await r.text());
-          // ดึงผลล่าสุดมาโชว์
-          await fetchSignals();
-        } catch (err) {
-          alert(`เกิดข้อผิดพลาด: ${err.message || err}`);
-        } finally {
-          setScanningGroup(null);
-        }
-      };
-
-      const handleCheckboxChange = (groupId) => {
-        setAutoScanSelection(prev => ({ ...prev, [groupId]: !prev[groupId] }));
-      };
-
-      const handleSaveSettings = async () => {
-        setIsSaving(true);
-        try {
-          const selected = Object.keys(autoScanSelection).filter(k => autoScanSelection[k]);
-          const r = await fetch(`${apiBase}/api/settings`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ auto_scan_groups: selected }),
-          });
-          if (!r.ok) throw new Error(await r.text());
-          alert("บันทึกการตั้งค่าเรียบร้อย");
-        } catch (e) {
-          alert(`บันทึกไม่สำเร็จ: ${e.message || e}`);
-        } finally {
-          setIsSaving(false);
-        }
-      };
-
-      return (
-        <div className="container mx-auto p-4 md:p-8 max-w-7xl">
-          <header className="text-center mb-10">
-            <h1 className="text-4xl md:text-5xl font-bold gradient-text">Signal Scanner Dashboard</h1>
-          </header>
-
-          {/* Auto-Scan */}
-          <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 p-6 rounded-xl shadow-lg mb-8">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-100">ตั้งค่าสแกนอัตโนมัติ (Auto-Scan)</h2>
-            <p className="text-gray-400 mb-4">เลือกกลุ่มที่ระบบจะสแกนอัตโนมัติเป็นระยะ (ข้อมูลจะถูกบันทึกลง <code>settings.json</code>)</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-4">
-              {scanGroups.map(group => (
-                <label key={group.id} className="flex items-center space-x-2 cursor-pointer p-2 rounded-md hover:bg-gray-700">
-                  <input
-                    type="checkbox"
-                    className="custom-checkbox h-5 w-5 rounded bg-gray-600 border-gray-500 text-cyan-500 focus:ring-cyan-600"
-                    checked={!!autoScanSelection[group.id]}
-                    onChange={() => handleCheckboxChange(group.id)}
-                  />
-                  <span>{group.name}</span>
-                </label>
-              ))}
-            </div>
-            <button onClick={handleSaveSettings} disabled={isSaving}
-              className="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg disabled:bg-gray-500">
-              {isSaving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
-            </button>
-          </div>
-
-          {/* Manual Scan */}
-          <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 p-6 rounded-xl shadow-lg mb-8">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-100">สั่งสแกนด้วยตนเอง (Manual Scan)</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {scanGroups.map(group => (
-                <button key={group.id}
-                        onClick={() => handleScan(group.id)}
-                        disabled={!!scanningGroup}
-                        className={`scan-button text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center ${colorClasses[group.color]}`}>
-                  {scanningGroup === group.id
-                    ? <div className="loader h-6 w-6 rounded-full border-2 border-t-2 border-gray-200/50"></div>
-                    : <span>{group.name}</span>}
-                </button>
-              ))}
-            </div>
-            {scanningGroup && <p className="text-center mt-4 text-amber-400 animate-pulse">
-              กำลังสั่งสแกนกลุ่ม {scanningGroup}...
-            </p>}
-          </div>
-
-          {/* Latest result */}
-          <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 p-6 rounded-xl shadow-lg">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-              <h2 className="text-2xl font-semibold text-gray-100">ผลการสแกนล่าสุด</h2>
-              <button onClick={fetchSignals} disabled={loading}
-                      className="bg-gray-700 p-2 rounded-full hover:bg-gray-600 disabled:opacity-50" title="รีเฟรชข้อมูล">
-                <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M4 4v5h5M20 20v-5h-5m15-5a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-              </button>
-            </div>
-
-            {signals && !loading && (
-              <div className="text-gray-400 mb-4 text-center md:text-left">
-                <p><strong>กลุ่มที่สแกนล่าสุด:</strong> <span className="font-semibold text-amber-400">{signals.scan_group}</span></p>
-                <p><strong>อัปเดตเมื่อ:</strong> {signals.last_updated}</p>
-              </div>
-            )}
-            {loading && !error && <p className="text-center py-8">กำลังโหลดข้อมูล...</p>}
-            {error && <p className="text-center py-8 text-red-400">เกิดข้อผิดพลาด: {error}</p>}
-
-            {signals && !loading && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-gray-900/50 rounded-lg">
-                  <thead className="bg-gray-700/50">
-                    <tr>
-                      <th className="py-3 px-4 text-left font-semibold">Ticker</th>
-                      <th className="py-3 px-4 text-left font-semibold">Signal</th>
-                      <th className="py-3 px-4 text-left font-semibold">Price</th>
-                      <th className="py-3 px-4 text-left font-semibold hidden md:table-cell">Timeframe</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {signals.signals_found?.length > 0 ? (
-                    signals.signals_found.map((s, i) => (
-                      <tr key={i} className="border-b border-gray-700 hover:bg-gray-700/50 transition-colors">
-                        <td className="py-3 px-4 font-bold text-cyan-400">{s.ticker}</td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            s.signal === 'Strong Buy' ? 'bg-green-500/20 text-green-300'
-                              : s.signal === 'Buy' ? 'bg-emerald-500/20 text-emerald-300'
-                              : s.signal === 'Strong Sell' ? 'bg-red-500/20 text-red-300'
-                              : s.signal === 'Sell' ? 'bg-rose-500/20 text-rose-300'
-                              : 'bg-yellow-500/20 text-yellow-300'
-                          }`}>
-                            {s.signal}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">{s.price}</td>
-                        <td className="py-3 px-4 hidden md:table-cell">{s.timeframe}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr><td colSpan="4" className="text-center py-10 text-gray-500">
-                      ไม่พบสัญญาณในรอบการสแกนล่าสุด
-                    </td></tr>
-                  )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      );
+    async function apiGet(path) {
+      const r = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`);
+      return await r.json();
+    }
+    async function apiPost(path, payload) {
+      const r = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await r.json().catch(()=> ({}));
+      if (!r.ok) throw new Error(data?.error || r.statusText || `HTTP ${r.status}`);
+      return data;
     }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    // ---------- settings ----------
+    async function loadSettings() {
+      try {
+        const data = await apiGet('/api/settings');
+        const selected = new Set(Array.isArray(data.auto_scan_groups) ? data.auto_scan_groups : []);
+        qsAll('[data-auto-group]').forEach(cb => {
+          cb.checked = selected.has(cb.getAttribute('data-auto-group'));
+        });
+      } catch (e) {
+        showToast('อ่านการตั้งค่าไม่สำเร็จ: ' + e.message, 'warn');
+      }
+    }
+    async function saveSettings() {
+      const groups = qsAll('[data-auto-group]:checked').map(cb => cb.getAttribute('data-auto-group'));
+      try {
+        await apiPost('/api/settings', { auto_scan_groups: groups });
+        showToast('บันทึกการตั้งค่าเรียบร้อย');
+      } catch (e) {
+        showToast('บันทึกไม่สำเร็จ: ' + e.message, 'warn');
+      }
+    }
+
+    // ---------- manual scan ----------
+    async function runManual(group) {
+      const s = document.getElementById('manual-status');
+      s.textContent = 'กำลังสแกนกลุ่ม ' + group + ' ...';
+      try {
+        const data = await apiGet(`/api/run-scan?group=${encodeURIComponent(group)}&manual=1`);
+        s.textContent = 'สแกนเสร็จ: ' + group + ` (ได้ ${Array.isArray(data.results) ? data.results.length : 0} รายการ)`;
+        await loadSignals(); // โหลดตารางล่าสุด
+      } catch (e) {
+        s.textContent = 'สแกนไม่สำเร็จ: ' + e.message;
+      }
+    }
+
+    // ---------- latest signals table ----------
+    function renderSignals(payload) {
+      const tbody = document.getElementById('tbody');
+      const meta = document.getElementById('meta');
+      tbody.innerHTML = '';
+
+      const group = payload?.group || '-';
+      const updated = payload?.updatedAt ? new Date(payload.updatedAt).toLocaleString() : '-';
+      meta.innerHTML = `กลุ่มล่าสุด: <span class="pill">${group}</span> &nbsp; อัปเดตเมื่อ: <span class="pill">${updated}</span>`;
+
+      const list = Array.isArray(payload?.results) ? payload.results : [];
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="muted">ไม่พบสัญญาณในรอบการสแกนล่าสุด</td></tr>`;
+        return;
+      }
+      const fmt = (v) => (v==null ? '-' : v);
+      list.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${fmt(row.ticker)}</td>
+          <td>${fmt(row.signal)}</td>
+          <td>${fmt(row.price)}</td>
+          <td>${fmt(row.timeframe)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function loadSignals() {
+      try {
+        const data = await apiGet('/api/signals');
+        renderSignals(data);
+      } catch (e) {
+        renderSignals({ group: '-', results: [] });
+        showToast('อ่านผลล่าสุดไม่สำเร็จ: ' + e.message, 'warn');
+      }
+    }
+
+    // ---------- wire up ----------
+    document.getElementById('btn-save').addEventListener('click', saveSettings);
+    document.getElementById('btn-refresh').addEventListener('click', loadSignals);
+    qsAll('[data-run]').forEach(btn => btn.addEventListener('click', () => runManual(btn.getAttribute('data-run'))));
+
+    // first load
+    loadSettings();
+    loadSignals();
   </script>
 </body>
 </html>
