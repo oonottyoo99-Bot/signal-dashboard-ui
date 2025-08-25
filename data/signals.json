@@ -1,6 +1,6 @@
 {
-  "group": "set50",
-  "updatedAt": "2025-08-25T16:18:49.230Z",
+  "group": "set100",
+  "updatedAt": "2025-08-25T16:18:54.148Z",
   "results": [
     {
       "ticker": "PTT.BK",
@@ -37,10 +37,22 @@
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
+    },
+    {
+      "ticker": "BDMS.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "CPN.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
     }
   ],
-  "total": 6,
-  "done": 6,
-  "batch": 6,
+  "total": 8,
+  "done": 8,
+  "batch": 8,
   "nextOffset": null
 }
