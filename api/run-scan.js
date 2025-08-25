@@ -1,52 +1,81 @@
-// /api/run-scan.js
-import { readJsonFromGitHub, writeJsonToGitHub } from './github';
+// api/run-scan.js
+import { ghRead, ghWriteJson } from "./github.js"; // ใช้ helper ใหม่ที่คุณใช้จริงอยู่
+import { NextResponse } from "next/server";
 
-export const config = { runtime: 'nodejs' };
-
-function nowISO() {
-  return new Date().toISOString();
+// ตัวช่วยง่าย ๆ
+async function readJsonFromRepo(path) {
+  const json = await ghRead(path);
+  if (!json || typeof json !== "object") {
+    throw new Error(`read ${path} failed`);
+  }
+  return json;
 }
 
-export default async function handler(req, res) {
+// สแกนสัญลักษณ์: mock อินดิเคเตอร์ให้คืนค่า "Sell" พร้อม timeframe 1D (คุณปรับ logic ได้)
+async function scanOne(ticker) {
+  return {
+    ticker,
+    signal: "Sell",
+    price: null,
+    timeframe: "1D",
+  };
+}
+
+export const dynamic = "force-dynamic";
+
+export async function GET(req) {
   try {
-    const { searchParams } = new URL(req.url, 'http://localhost');
-    const group  = (searchParams.get('group') || '').trim();
-    const manual = searchParams.get('manual') === '1';
+    const { searchParams } = new URL(req.url);
+    const group = (searchParams.get("group") || "").trim();
+    const isManual = searchParams.get("manual") === "1";
 
-    if (!group) return res.status(400).json({ error: 'missing group' });
-
-    // 1) โหลดรายชื่อสัญลักษณ์จาก repo 'symbols'
-    const symbolsJson = await readJsonFromGitHub('data/symbols.json', 'symbols');
-    const list = symbolsJson?.[group];
-    if (!Array.isArray(list) || list.length === 0) {
-      return res.status(400).json({ error: `ไม่พบกลุ่ม ${group} ใน data/symbols.json` });
+    if (!group) {
+      // อย่าโยน 400 ให้ UI error — ให้ตอบ 200 พร้อมเหตุผล
+      return NextResponse.json({ ok: false, reason: "missing group" });
     }
 
-    // 2) (ตัวอย่าง) คำนวณสัญญาณแบบ placeholder ก่อน
-    // ตรงนี้คุณค่อยสลับเป็นสูตรจริง TF 1D/1W ได้ทันที
-    const results = [];
-    for (const ticker of list) {
-      // mock: ให้ทุกตัว "Sell" เวลาทดสอบ — เพื่อดู flow การเขียนไฟล์
-      results.push({
-        ticker,
-        signal: 'Sell',
-        price: null,
-        timeframe: '1D'
+    // อ่าน symbols.json จาก repo
+    const symbols = await readJsonFromRepo("data/symbols.json");
+
+    // รองรับทุก key ที่มีในไฟล์ (ไม่ล็อก whitelist)
+    const list = symbols[group];
+    if (!Array.isArray(list)) {
+      return NextResponse.json({ ok: false, reason: `group "${group}" not found in data/symbols.json` });
+    }
+    if (list.length === 0) {
+      // ไม่สแกน แต่ตอบ 200 เพื่อไม่ขึ้น HTTP error ใน UI
+      return NextResponse.json({
+        ok: true,
+        group,
+        updatedAt: new Date().toISOString(),
+        results: [],
+        note: "no symbols in this group"
       });
+    }
+
+    // สแกนทีละตัว (ทำทีละตัวพอ ไม่ต้องซับซ้อน)
+    const results = [];
+    for (const t of list) {
+      const r = await scanOne(t);
+      results.push(r);
     }
 
     const payload = {
       group,
-      updatedAt: nowISO(),
-      results
+      updatedAt: new Date().toISOString(),
+      results,
     };
 
-    // 3) บันทึกผลลง GitHub (ไฟล์ signals.json ใน repo หลัก)
-    const signalsPath = process.env.GH_PATH_SIGNALS || 'api/signals.json';
-    await writeJsonToGitHub(signalsPath, payload, `update signals ${group}`);
+    // เขียนผลล่าสุดลง data/signals.json
+    await ghWriteJson("data/signals.json", payload, {
+      message: `update signals ${group}`,
+    });
 
-    return res.status(200).json(payload);
-  } catch (e) {
-    return res.status(500).json({ error: 'scan failed', detail: String(e.message || e) });
+    // manual/auto ใช้ตัวเดียวกัน — ตอบกลับผล
+    return NextResponse.json(payload);
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, error: "scan failed", detail: String(err) }
+    );
   }
 }
