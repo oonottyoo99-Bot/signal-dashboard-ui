@@ -1,39 +1,21 @@
 {
-  "group": "set50",
-  "updatedAt": "2025-08-25T13:54:55.787Z",
+  "group": "bitkub",
+  "updatedAt": "2025-08-25T13:54:59.291Z",
   "results": [
     {
-      "ticker": "PTT.BK",
+      "ticker": "BTCUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "AOT.BK",
+      "ticker": "ETHUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "KBANK.BK",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "SCB.BK",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "ADVANC.BK",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "CPALL.BK",
+      "ticker": "XRPUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
