@@ -1,6 +1,6 @@
 {
-  "group": "set50",
-  "updatedAt": "2025-08-25T13:54:26.673Z",
+  "group": "set100",
+  "updatedAt": "2025-08-25T13:54:31.390Z",
   "results": [
     {
       "ticker": "PTT.BK",
@@ -34,6 +34,18 @@
     },
     {
       "ticker": "CPALL.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "BDMS.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "CPN.BK",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
