@@ -1,63 +1,39 @@
 {
-  "group": "nasdaq100",
-  "updatedAt": "2025-08-25T03:42:39.778Z",
+  "group": "altcoins",
+  "updatedAt": "2025-08-25T03:42:47.368Z",
   "results": [
     {
-      "ticker": "AMZN",
+      "ticker": "BTCUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "TSLA",
+      "ticker": "ETHUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "GOOGL",
+      "ticker": "SOLUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "QQQ",
+      "ticker": "XRPUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "META",
+      "ticker": "ADAUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "NVDA",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "MSFT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "AAPL",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "ADBE",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "NFLX",
+      "ticker": "MATICUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
