@@ -1,140 +1,175 @@
 // api/run-scan.js
+// Batch scan + เขียนผลไปที่ data/signals.json ใน repo หลัก โดยเรียก GitHub API ตรง ๆ
+// ไม่พึ่งพาไฟล์ helper ใด ๆ
 //
-// Batch scanner + progress.
-// - Query:
-//     group=<string>                 (required)
-//     manual=1                       (optional; เพียงใช้เพื่อบอก UI ว่าเป็น manual run)
-//     offset=<int>                   (optional; start index for batching; default 0)
-//     limit=<int>                    (optional; batch size; default 25)
-// - Response: { ok, group, updatedAt, results, total, done, batch, nextOffset|null }
-//
-// ต้องมีไฟล์ data/symbols.json และ data/signals.json ใน repo เดียวกับโปรเจ็กต์
-// ENV ที่ใช้ (ตั้งแล้วของคุณ):
-//   GH_REPO, GH_REPO_SYMBOLS, GH_BRANCH, GH_TOKEN
-//   GH_PATH_SETTINGS = data/settings.json
-//   GH_PATH_SIGNALS  = data/signals.json
-//
-// NOTE: อาศัย helper ใน api/github.js ที่มีฟังก์ชัน ghReadJson(path, opts), ghWriteJson(path, json, opts)
-//       โดย opts.repo = 'symbols' สำหรับอ่าน symbols.json จาก repo ตาม GH_REPO_SYMBOLS
+// ENV ที่ต้องมี (คุณตั้งไว้แล้ว):
+//   GH_REPO                = owner/repo   (repo หลักที่เก็บ signals.json)
+//   GH_REPO_SYMBOLS       = owner/repo   (repo ที่เก็บ symbols.json; ถ้าไม่ใส่จะ fallback ไป GH_REPO)
+//   GH_BRANCH             = main
+//   GH_TOKEN              = <token PAT>
+//   GH_PATH_SIGNALS       = data/signals.json
+//   (PATH_SYMBOLS คงที่: data/symbols.json)
+// ------------------------------------------------------------
 
-import { NextResponse } from "next/server"; // ถ้าเป็น Next 13+ (Vercel) จะหาได้อัตโนมัติ
-import { ghReadJson, ghWriteJson } from "./github"; // <- helper ที่คุณใช้อยู่แล้ว
+const fetch = global.fetch;
 
-// ค่าตั้งต้น batch
-const DEFAULT_LIMIT = 25;
-
-// path ไฟล์ใน repo (คุณตั้ง ENV แล้ว แต่สำรองค่า default กันพลาด)
-const PATH_SYMBOLS = process.env.GH_PATH_SYMBOLS || "data/symbols.json";
+const REPO_MAIN   = process.env.GH_REPO;
+const REPO_SYMBOL = process.env.GH_REPO_SYMBOLS || process.env.GH_REPO;
+const BRANCH      = process.env.GH_BRANCH || "main";
+const TOKEN       = process.env.GH_TOKEN || "";
 const PATH_SIGNALS = process.env.GH_PATH_SIGNALS || "data/signals.json";
+const PATH_SYMBOLS = "data/symbols.json";
 
-// ยูทิลแสดง error ชัด ๆ
-function err(res, code, msg) {
-  return res.status(code).json({ ok: false, error: msg });
+function bad(res, code, msg) {
+  res.statusCode = code;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify({ ok: false, error: msg }));
 }
 
-// mock “สแกน” ง่าย ๆ (คุณจะค่อย ๆ เปลี่ยนเป็น logic indicator จริงของคุณก็ได้)
-async function scanOne(ticker) {
-  // ตรงนี้เอา indicator จริงมาเสียบได้เลย
-  return {
-    ticker,
-    signal: "Sell",
-    price: null,
-    timeframe: "1D",
+function ok(res, body) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
+// ---------- GitHub REST helpers (Contents API) ----------
+const GH_API = "https://api.github.com";
+
+async function ghGetContents(repo, path) {
+  const url = `${GH_API}/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(BRANCH)}`;
+  const r = await fetch(url, {
+    headers: {
+      "Authorization": TOKEN ? `token ${TOKEN}` : undefined,
+      "Accept": "application/vnd.github+json",
+      "User-Agent": "signal-dashboard-ui",
+    },
+  });
+  if (r.status === 404) return { ok: false, status: 404 };
+  if (!r.ok) {
+    const t = await r.text().catch(()=> "");
+    return { ok: false, status: r.status, detail: t };
+  }
+  const j = await r.json();
+  // j.content เป็น base64
+  const content = Buffer.from(j.content || "", "base64").toString("utf8");
+  return { ok: true, sha: j.sha, content };
+}
+
+async function ghPutContents(repo, path, jsonObj, sha) {
+  const url = `${GH_API}/repos/${repo}/contents/${encodeURIComponent(path)}`;
+  const contentB64 = Buffer.from(JSON.stringify(jsonObj, null, 2), "utf8").toString("base64");
+  const body = {
+    message: `update ${path}`,
+    content: contentB64,
+    branch: BRANCH,
   };
+  if (sha) body.sha = sha;
+
+  const r = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Authorization": TOKEN ? `token ${TOKEN}` : undefined,
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "User-Agent": "signal-dashboard-ui",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(()=> "");
+    return { ok: false, status: r.status, detail: t };
+  }
+  return { ok: true };
 }
 
-// ทำ merge partial results เข้ากับของเดิมใน signals.json (เช่น batch ที่แล้วทำไว้)
-function mergeResults(oldArr = [], batchArr = []) {
+// อ่าน symbols.json แบบ raw (เร็วกว่า) — ถ้าไม่เจอ ค่อย fallback ไป Contents API
+async function readSymbolsArray(group) {
+  // raw URL
+  const raw = `https://raw.githubusercontent.com/${REPO_SYMBOL}/${BRANCH}/${PATH_SYMBOLS}?t=${Date.now()}`;
+  let txt = null;
+  try {
+    const r = await fetch(raw, { headers: { "User-Agent": "signal-dashboard-ui" } });
+    if (r.ok) txt = await r.text();
+  } catch (_) {}
+  if (!txt) {
+    // fallback: contents
+    const got = await ghGetContents(REPO_SYMBOL, PATH_SYMBOLS);
+    if (!got.ok) throw new Error(`read symbols failed: ${got.status} ${got.detail || ""}`);
+    txt = got.content;
+  }
+  const json = JSON.parse(txt);
+  if (!json[group]) throw new Error(`ไม่พบกลุ่ม ${group} ใน ${PATH_SYMBOLS}`);
+  return json[group]; // array of tickers
+}
+
+// merge batch results with old
+function mergeResults(oldArr = [], addArr = []) {
   const map = new Map();
-  for (const r of oldArr) map.set(r.ticker, r);
-  for (const r of batchArr) map.set(r.ticker, r);
+  for (const x of oldArr) map.set(x.ticker, x);
+  for (const x of addArr) map.set(x.ticker, x);
   return Array.from(map.values());
 }
 
-export default async function handler(req, res) {
+// mock scanner: ใส่ logic จริงของคุณภายหลังได้
+async function scanOne(ticker) {
+  return { ticker, signal: "Sell", price: null, timeframe: "1D" };
+}
+
+module.exports = async (req, res) => {
   try {
-    if (req.method !== "GET") {
-      return err(res, 405, "Method not allowed");
-    }
+    if (req.method !== "GET") return bad(res, 405, "Method not allowed");
 
-    const group = String(req.query.group || "").trim();
-    if (!group) return err(res, 400, "missing ?group");
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const group  = (url.searchParams.get("group") || "").trim();
+    const offset = parseInt(url.searchParams.get("offset") || "0", 10);
+    const limit  = Math.max(1, parseInt(url.searchParams.get("limit") || "25", 10));
 
-    // batch params
-    const offset = Number.isFinite(Number(req.query.offset))
-      ? Number(req.query.offset)
-      : 0;
-    const limit = Number.isFinite(Number(req.query.limit))
-      ? Math.max(1, Number(req.query.limit))
-      : DEFAULT_LIMIT;
+    if (!group) return bad(res, 400, "missing ?group");
 
-    // 1) อ่าน symbols.json (จาก repo สัญลักษณ์)
-    const symbolsJson = await ghReadJson(PATH_SYMBOLS, { repo: "symbols" });
-    if (!symbolsJson || !symbolsJson[group]) {
-      return err(res, 400, `ไม่พบกลุ่ม ${group} ใน ${PATH_SYMBOLS}`);
-    }
-    const allSymbols = symbolsJson[group]; // array
-    const total = allSymbols.length;
+    // 1) symbols
+    const all = await readSymbolsArray(group);
+    const total = all.length;
 
-    // ถ้าไม่พบสัญลักษณ์เลย ก็เขียน signals ว่าง ๆ
-    if (total === 0) {
-      const updatedAt = new Date().toISOString();
-      const payload = {
-        group,
-        updatedAt,
-        results: [],
-        total,
-        done: 0,
-        batch: 0,
-        nextOffset: null,
-      };
-      await ghWriteJson(PATH_SIGNALS, payload);
-      return res.status(200).json({ ok: true, ...payload });
-    }
+    const start = Math.min(Math.max(0, offset), total);
+    const end   = Math.min(start + limit, total);
+    const batchTickers = all.slice(start, end);
 
-    // 2) slice batch
-    const start = Math.min(offset, total);
-    const end = Math.min(start + limit, total);
-    const batch = allSymbols.slice(start, end);
+    // 2) สแกนเฉพาะ batch นี้
+    const batchResults = [];
+    for (const tk of batchTickers) batchResults.push(await scanOne(tk));
 
-    // 3) ทำการสแกนเฉพาะใน batch
-    const scanned = [];
-    for (const tk of batch) {
-      const r = await scanOne(tk);
-      scanned.push(r);
-    }
-
-    // 4) อ่าน signals เดิม (เพื่อ merge)
-    let oldSignals = null;
-    try {
-      oldSignals = await ghReadJson(PATH_SIGNALS);
-    } catch (_) {
-      oldSignals = null;
+    // 3) โหลด signals.json เดิม + sha เพื่อ merge/อัปเดต
+    let oldPayload = null;
+    let sha = null;
+    {
+      const got = await ghGetContents(REPO_MAIN, PATH_SIGNALS);
+      if (got.ok) { sha = got.sha; try { oldPayload = JSON.parse(got.content || "{}"); } catch(_) {} }
+      else if (got.status !== 404) throw new Error(`read signals failed: ${got.status} ${got.detail || ""}`);
     }
 
     const updatedAt = new Date().toISOString();
-    const base = oldSignals && oldSignals.group === group ? oldSignals : null;
-    const mergedResults = mergeResults(base?.results || [], scanned);
+    const baseResults = (oldPayload && oldPayload.group === group && Array.isArray(oldPayload.results))
+      ? oldPayload.results : [];
 
-    // 5) คำนวณ progress + next offset
-    const done = end;
+    const merged = mergeResults(baseResults, batchResults);
+    const done   = end;
     const nextOffset = end < total ? end : null;
 
-    const payload = {
+    const newPayload = {
       group,
       updatedAt,
-      results: mergedResults,
+      results: merged,
       total,
       done,
-      batch: batch.length,
+      batch: batchResults.length,
       nextOffset,
     };
 
-    // 6) เขียนกลับ signals.json
-    await ghWriteJson(PATH_SIGNALS, payload);
+    // 4) เขียนกลับ (มี sha ใส่ไปด้วย, ถ้าไม่มี sha = create)
+    const put = await ghPutContents(REPO_MAIN, PATH_SIGNALS, newPayload, sha);
+    if (!put.ok) return bad(res, 422, `write failed: ${put.status} ${put.detail || ""}`);
 
-    return res.status(200).json({ ok: true, ...payload });
+    return ok(res, { ok: true, ...newPayload });
   } catch (e) {
-    return err(res, 500, `scan failed: ${String(e)}`);
+    return bad(res, 500, `scan failed: ${String(e)}`);
   }
-}
+};
