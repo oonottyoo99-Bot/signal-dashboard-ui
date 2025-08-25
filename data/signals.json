@@ -1,39 +1,63 @@
 {
-  "group": "altcoins",
-  "updatedAt": "2025-08-25T03:42:47.368Z",
+  "group": "sp500",
+  "updatedAt": "2025-08-25T03:42:59.459Z",
   "results": [
     {
-      "ticker": "BTCUSDT",
+      "ticker": "AAPL",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "ETHUSDT",
+      "ticker": "MSFT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "SOLUSDT",
+      "ticker": "NVDA",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "XRPUSDT",
+      "ticker": "META",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "ADAUSDT",
+      "ticker": "SPY",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "MATICUSDT",
+      "ticker": "AMZN",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "GOOGL",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "AVGO",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "XOM",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "BRK-B",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
