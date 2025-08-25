@@ -1,15 +1,63 @@
 {
-  "group": "gold",
-  "updatedAt": "2025-08-25T03:32:00.266Z",
+  "group": "sp500",
+  "updatedAt": "2025-08-25T03:36:16.677Z",
   "results": [
     {
-      "ticker": "GC=F",
+      "ticker": "AAPL",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "XAUUSD=X",
+      "ticker": "MSFT",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "NVDA",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "META",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "SPY",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "AMZN",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "GOOGL",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "AVGO",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "XOM",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "BRK-B",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
