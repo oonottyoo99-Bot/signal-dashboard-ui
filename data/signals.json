@@ -1,6 +1,6 @@
 {
-  "group": "okx_top200",
-  "updatedAt": "2025-08-25T23:55:54.688Z",
+  "group": "bitkub",
+  "updatedAt": "2025-08-25T23:56:00.032Z",
   "results": [
     {
       "ticker": "BTCUSDT",
@@ -15,32 +15,14 @@
       "timeframe": "1D"
     },
     {
-      "ticker": "SOLUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
       "ticker": "XRPUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "DOGEUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "DOTUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     }
   ],
-  "total": 6,
-  "done": 6,
-  "batch": 6,
+  "total": 3,
+  "done": 3,
+  "batch": 3,
   "nextOffset": null
 }
