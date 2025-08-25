@@ -1,15 +1,51 @@
 {
-  "group": "gold",
-  "updatedAt": "2025-08-25T13:54:43.529Z",
+  "group": "set100",
+  "updatedAt": "2025-08-25T13:54:50.621Z",
   "results": [
     {
-      "ticker": "GC=F",
+      "ticker": "PTT.BK",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "XAUUSD=X",
+      "ticker": "AOT.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "KBANK.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "SCB.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "ADVANC.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "CPALL.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "BDMS.BK",
+      "signal": "Sell",
+      "price": null,
+      "timeframe": "1D"
+    },
+    {
+      "ticker": "CPN.BK",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
