@@ -1,6 +1,6 @@
 {
-  "group": "binance_top200",
-  "updatedAt": "2025-08-25T13:54:12.985Z",
+  "group": "okx_top200",
+  "updatedAt": "2025-08-25T13:54:16.106Z",
   "results": [
     {
       "ticker": "BTCUSDT",
@@ -27,13 +27,13 @@
       "timeframe": "1D"
     },
     {
-      "ticker": "ADAUSDT",
+      "ticker": "DOGEUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "BNBUSDT",
+      "ticker": "DOTUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
