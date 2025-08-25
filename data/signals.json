@@ -1,6 +1,6 @@
 {
-  "group": "altcoins",
-  "updatedAt": "2025-08-25T16:18:31.788Z",
+  "group": "binance_top200",
+  "updatedAt": "2025-08-25T16:18:35.098Z",
   "results": [
     {
       "ticker": "BTCUSDT",
@@ -33,7 +33,7 @@
       "timeframe": "1D"
     },
     {
-      "ticker": "MATICUSDT",
+      "ticker": "BNBUSDT",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
