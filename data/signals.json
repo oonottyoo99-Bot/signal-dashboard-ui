@@ -1,39 +1,15 @@
 {
-  "group": "altcoins",
-  "updatedAt": "2025-08-25T03:31:35.744Z",
+  "group": "gold",
+  "updatedAt": "2025-08-25T03:31:53.106Z",
   "results": [
     {
-      "ticker": "BTCUSDT",
+      "ticker": "GC=F",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
     },
     {
-      "ticker": "ETHUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "SOLUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "XRPUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "ADAUSDT",
-      "signal": "Sell",
-      "price": null,
-      "timeframe": "1D"
-    },
-    {
-      "ticker": "MATICUSDT",
+      "ticker": "XAUUSD=X",
       "signal": "Sell",
       "price": null,
       "timeframe": "1D"
