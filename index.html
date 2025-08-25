@@ -5,263 +5,246 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Signal Scanner Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root{
-      --bg:#0b0d10; --panel:#12161b; --panel2:#0f1318; --text:#e7eef5;
-      --muted:#99a3ad; --primary:#16c2f5; --ok:#20c997; --warn:#ffc107; --danger:#ff4d4f;
-      --chip:#0b2731; --chip-on:#0e6e84;
+      --bg:#0b0d10; --panel:#12161b; --chip:#0b2731; --chip-on:#0e6e84;
+      --text:#cfe3ee; --muted:#99a3ad; --ok:#20c997; --warn:#ffc107; --danger:#ff4d4f;
+      --link:#3fc3ff; --line:#1d2630;
     }
     *{box-sizing:border-box}
-    body{margin:0;background:radial-gradient(1200px 600px at 80% -200px,#12202a 0%,#0b0d10 48%,#0b0d10 100%),var(--bg);color:var(--text);font:16px/1.55 Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    body{margin:0;background:#0b0d10;color:var(--text);font:14px/1.6 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
     .wrap{max-width:1080px;margin:40px auto;padding:0 16px}
-    h1{font-weight:700;letter-spacing:.2px;color:#22d3ee;text-align:center;margin:4px 0 24px}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01));border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:18px 16px;margin:14px 0;box-shadow:0 4px 24px rgba(0,0,0,.25)}
-    .row{display:flex;flex-wrap:wrap;gap:14px}
-    .col{flex:1 1 260px}
-    .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
-    .chip{background:var(--chip);border:1px solid rgba(255,255,255,.08);color:#cfe8f1;padding:10px 14px;border-radius:12px;cursor:pointer;user-select:none;transition:.2s}
-    .chip:hover{border-color:#2c3d47}
-    .chip.on{background:linear-gradient(180deg,#0b3945,#0b2b35);color:#eaffff;border-color:#1e8aa2;box-shadow:inset 0 0 0 1px rgba(34,211,238,.35)}
-    .chip:disabled{opacity:.6;cursor:not-allowed}
-    .btn{display:inline-flex;align-items:center;gap:8px;background:#0e1a23;border:1px solid rgba(255,255,255,.12);color:#eaf8ff;padding:10px 14px;border-radius:12px;cursor:pointer;transition:.2s}
-    .btn:hover{border-color:#2b4657}
-    .btn.primary{background:linear-gradient(180deg,#0d3a46,#0d2a33);border-color:#1a5d70}
-    .btn.green{background:linear-gradient(180deg,#0f382f,#0d2c27);border-color:#215c50}
-    .btn.warn{background:linear-gradient(180deg,#3a2f0f,#2c230d);border-color:#5c4d21}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-    .grid{width:100%;border-collapse:collapse;margin-top:10px}
-    .grid th,.grid td{padding:12px;border-bottom:1px solid rgba(255,255,255,.06)}
-    .grid th{color:#9fb1bd;font-weight:600;text-align:left}
-    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}
-    .b-sell{background:#2b1216;color:#ff9aa7;border:1px solid #932c38}
-    .b-buy{background:#102b1b;color:#95ffd4;border:1px solid #2f7d59}
-    .muted{color:#8ca0ad}
+    h1{font-size:34px;letter-spacing:.5px;text-align:center;margin:0 0 24px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:18px 0;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+    .row{display:flex;flex-wrap:wrap;gap:10px}
+    .chip{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:999px;
+      border:1px solid var(--chip);background:#0e1419;color:var(--text);cursor:pointer;user-select:none}
+    .chip input{appearance:none;width:18px;height:18px;border-radius:4px;border:1px solid #355;display:inline-block;position:relative}
+    .chip input:checked{background:var(--chip-on);border-color:var(--chip-on)}
+    .chip input:checked::after{content:"";position:absolute;inset:4px;background:#fff;border-radius:2px}
+    .btn{height:36px;border-radius:10px;border:1px solid #2a3946;background:#13202a;color:#bfe9ff;padding:0 14px;cursor:pointer}
+    .btn.ok{background:#0e342a;border-color:#1f8f72;color:#b8ffe9}
+    .btn.small{height:32px;font-size:12px}
+    .toolbar{display:flex;gap:10px;align-items:center;margin-top:12px}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    thead th{font-weight:600;text-align:left;padding:10px;border-bottom:1px solid var(--line);color:#99b2c6}
+    tbody td{padding:12px 10px;border-bottom:1px dashed #17212c}
+    .badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid #344}
+    .badge.sell{color:#ffc1c1;border-color:#593030;background:rgba(255,77,79,.12)}
+    .muted{color:var(--muted)}
     .right{margin-left:auto}
-    .toolbar{display:flex;align-items:center;gap:10px}
-    .toast{position:fixed;inset:auto 16px 16px auto;max-width:min(480px,calc(100vw - 32px));background:#0f151a;border:1px solid rgba(255,255,255,.12);color:#d6e9f3;border-radius:12px;padding:12px 14px;box-shadow:0 12px 28px rgba(0,0,0,.35);display:none;z-index:9999}
-    .toast.show{display:block;animation:fade .15s ease-out}
-    @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-    .spin{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.25);border-top-color:#22d3ee;border-radius:50%;animation:rot .8s linear infinite}
-    @keyframes rot{to{transform:rotate(360deg)}}
-    .section-title{font-weight:700;margin:6px 0 10px;color:#a7c7d4}
-    .mono{font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace}
+    .toast{position:fixed;right:16px;bottom:16px;background:#0f1b24;border:1px solid #274659;color:#d2f2ff;
+      padding:10px 14px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;transform:translateY(8px);transition:.25s}
+    .toast.show{opacity:1;transform:none}
+    a {color:var(--link);text-decoration:none}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Signal Scanner Dashboard</h1>
 
+    <!-- Auto-scan -->
     <div class="card">
-      <div class="section-title">ตั้งค่าสแกนอัตโนมัติ (Auto-Scan)</div>
-      <div class="chips" id="auto-group">
-        <!-- chips เติมโดย JS -->
-      </div>
-      <div style="margin-top:12px" class="toolbar">
-        <button id="save-btn" class="btn primary">บันทึกการตั้งค่า</button>
-        <div id="save-state" class="muted"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="section-title">สั่งสแกนด้วยตนเอง (Manual Scan)</div>
-      <div class="chips" id="manual-group">
-        <!-- chips เติมโดย JS -->
-      </div>
-      <div class="muted" id="manual-state" style="margin-top:10px"></div>
-    </div>
-
-    <div class="card">
+      <div class="row" style="margin-bottom:8px;font-weight:600">ตั้งค่าสแกนอัตโนมัติ (Auto-Scan)</div>
+      <div class="row" id="auto-chips"></div>
       <div class="toolbar">
-        <div class="section-title">ผลการสแกนล่าสุด</div>
-        <div class="right"></div>
-        <button id="refresh-btn" class="btn"><span class="spin" id="refresh-spin" style="display:none"></span><span>รีเฟรช</span></button>
+        <button id="btn-save" class="btn ok">บันทึกการตั้งค่า</button>
+        <span id="save-state" class="muted"></span>
+        <span class="right muted">* ถ้าเปิดหน้า preview แล้ว API ไม่มี ระบบจะสลับไปใช้ production ให้อัตโนมัติ</span>
       </div>
-      <div class="muted" style="margin:6px 0">กลุ่มล่าสุด: <span id="last-group" class="mono">-</span> • อัปเดตเมื่อ: <span id="last-time" class="mono">-</span></div>
-      <table class="grid" id="result-table">
-        <thead>
-          <tr><th>Ticker</th><th>Signal</th><th>Price</th><th>Timeframe</th></tr>
-        </thead>
-        <tbody id="result-body">
-          <tr><td colspan="4" class="muted">ไม่พบสัญญาณในรายการสแกนล่าสุด</td></tr>
-        </tbody>
-      </table>
+    </div>
+
+    <!-- Manual -->
+    <div class="card">
+      <div class="row" style="margin-bottom:8px;font-weight:600">สั่งสแกนด้วยตนเอง (Manual Scan)</div>
+      <div class="row" id="manual-buttons"></div>
+      <div id="scan-note" class="muted" style="margin-top:6px"></div>
+    </div>
+
+    <!-- Table -->
+    <div class="card">
+      <div class="row" style="margin-bottom:6px;align-items:center">
+        <div id="latest-title" class="muted">ผลการสแกนล่าสุด</div>
+        <button id="btn-refresh" class="btn small right">รีเฟรช</button>
+      </div>
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:20%">Ticker</th>
+              <th style="width:20%">Signal</th>
+              <th style="width:20%">Price</th>
+              <th style="width:20%">Timeframe</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="4" class="muted">ไม่มีข้อมูล</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
 
-  <script>
-    // ===== Config: ใช้ relative path เสมอ =====
-    const API = ''; // same-origin, no CORS issues
+<script>
+/** ----------------------------------------------------------------
+ *  API base auto-detect:
+ *  1) ลอง origin ปัจจุบัน (เช่น preview)
+ *  2) ถ้าไม่ได้ → fallback ไป production
+ * ---------------------------------------------------------------*/
+const PROD = 'https://signal-dashboard-ui.vercel.app';
+const API_CANDIDATES = [location.origin, PROD];
 
-    // ===== กลุ่มทั้งหมดที่รองรับ =====
-    const ALL_GROUPS = [
-      ['sp500','S&P 500'],
-      ['nasdaq100','Nasdaq 100'],
-      ['altcoins','Altcoins (OKX)'],
-      ['binance_top200','Binance Top 200'],
-      ['okx_top200','OKX Top 200'],
-      ['bitkub','Bitkub'],
-      ['set50','SET50'],
-      ['set100','SET100'],
-      ['etf','ETFs'],
-      ['gold','ทองคำ'],
-    ];
+let API = PROD; // will be picked below
 
-    // ===== helpers =====
-    const $ = s => document.querySelector(s);
-    const elAuto  = $('#auto-group');
-    const elManual= $('#manual-group');
-    const elSave  = $('#save-btn');
-    const elSaveState = $('#save-state');
-    const elManualState = $('#manual-state');
-    const elRefresh = $('#refresh-btn');
-    const elRefreshSpin = $('#refresh-spin');
-    const elRB    = $('#result-body');
-    const elLG    = $('#last-group');
-    const elLT    = $('#last-time');
-    const toastEl = $('#toast');
+async function pickApiBase() {
+  for (const base of API_CANDIDATES) {
+    try {
+      const ping = await fetch(base + '/api/github?op=ping', { cache: 'no-store' });
+      if (ping.ok) { return base; }
+    } catch (_) { /* ignore and try next */ }
+  }
+  return PROD;
+}
 
-    function toast(msg, type='info'){
-      toastEl.textContent = msg;
-      toastEl.style.borderColor = type==='error' ? 'rgba(255,77,79,.45)' : 'rgba(255,255,255,.18)';
-      toastEl.classList.add('show');
-      setTimeout(()=>toastEl.classList.remove('show'), 3500);
+/** UI helpers */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+function toast(msg, ok=false){
+  const t = $('#toast'); t.textContent = msg;
+  t.style.borderColor = ok ? '#1f8f72' : '#6b2b2b';
+  t.style.color = ok ? '#caffe6' : '#ffdede';
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+/** groups config (สอดคล้องกับ data/symbols.json) */
+const GROUPS = [
+  ['sp500','S&P 500'],
+  ['nasdaq100','Nasdaq 100'],
+  ['altcoins','Altcoins (OKX)'],
+  ['binance_top200','Binance Top 200'],
+  ['okx_top200','OKX Top 200'],
+  ['bitkub','Bitkub'],
+  ['set50','SET50'],
+  ['set100','SET100'],
+  ['etfs','ETFs'],
+  ['gold','ทองคำ'],
+];
+
+function renderAutoChips(selected){
+  const box = $('#auto-chips'); box.innerHTML = '';
+  for (const [id,label] of GROUPS){
+    const chip = document.createElement('label');
+    chip.className = 'chip';
+    chip.innerHTML = `<input type="checkbox" data-id="${id}" ${selected.includes(id)?'checked':''}/> ${label}`;
+    box.appendChild(chip);
+  }
+}
+
+function renderManualButtons(){
+  const box = $('#manual-buttons'); box.innerHTML = '';
+  for (const [id,label] of GROUPS){
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = label;
+    btn.onclick = ()=> manualScan(id);
+    box.appendChild(btn);
+  }
+}
+
+function renderTable(payload){
+  const tbody = $('#rows');
+  const res = (payload && payload.results) || [];
+  const title = `กลุ่มล่าสุด: ${payload?.group || '-'} • อัปเดตเมื่อ: ${payload?.updatedAt || '-'}`;
+  $('#latest-title').textContent = title;
+
+  if (!res.length){
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">ไม่มีข้อมูล</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = res.map(r=>`
+    <tr>
+      <td>${r.ticker}</td>
+      <td><span class="badge sell">${r.signal || '-'}</span></td>
+      <td>${r.price ?? '-'}</td>
+      <td>${r.timeframe || '-'}</td>
+    </tr>
+  `).join('');
+}
+
+/** API calls */
+async function loadSettings(){
+  const r = await fetch(API + '/api/settings', { cache:'no-store' });
+  if (!r.ok) throw new Error('settings HTTP '+r.status);
+  return r.json();
+}
+async function saveSettings(){
+  const groups = $$('#auto-chips input:checked').map(i=>i.dataset.id);
+  const r = await fetch(API + '/api/settings', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ auto_scan_groups: groups })
+  });
+  if (!r.ok) throw new Error('save HTTP '+r.status);
+  return r.json();
+}
+async function loadSignals(){
+  const r = await fetch(API + '/api/signals', { cache:'no-store' });
+  if (!r.ok) throw new Error('signals HTTP '+r.status);
+  return r.json();
+}
+async function manualScan(group){
+  $('#scan-note').textContent = `กำลังสั่งสแกนกลุ่ม ${group} ...`;
+  try{
+    const r = await fetch(API + `/api/run-scan?group=${encodeURIComponent(group)}&manual=1`, { cache:'no-store' });
+    if (!r.ok) throw new Error('run-scan HTTP '+r.status);
+    const json = await r.json();
+    await refresh();
+    toast('สแกนเสร็จแล้ว', true);
+  }catch(err){
+    toast('สั่งสแกนล้มเหลว: '+err.message);
+  }finally{
+    $('#scan-note').textContent = '';
+  }
+}
+async function refresh(){
+  try{
+    const data = await loadSignals();
+    renderTable(data);
+  }catch(err){
+    toast('โหลดผลล่าสุดล้มเหลว: '+err.message);
+  }
+}
+
+/** boot */
+(async function init(){
+  API = await pickApiBase();
+  renderManualButtons();
+
+  try{
+    const s = await loadSettings();
+    renderAutoChips(s.auto_scan_groups || []);
+  }catch{
+    renderAutoChips([]); // เผื่อ settings ยังว่าง
+  }
+  await refresh();
+
+  $('#btn-save').onclick = async ()=>{
+    $('#save-state').textContent = 'กำลังบันทึก...';
+    try{
+      await saveSettings();
+      $('#save-state').textContent = 'บันทึกแล้ว';
+      toast('บันทึกการตั้งค่าเรียบร้อย', true);
+    }catch(err){
+      $('#save-state').textContent = '';
+      toast('บันทึกไม่สำเร็จ: '+err.message);
     }
-
-    function chip(label, on=false){
-      const b = document.createElement('button');
-      b.className = 'chip' + (on ? ' on' : '');
-      b.type='button';
-      b.textContent = label;
-      return b;
-    }
-
-    async function safeFetch(path, opts={}){
-      const res = await fetch(path, opts).catch(err=>{
-        throw new Error('Failed to fetch: ' + err.message);
-      });
-      if (!res.ok){
-        let txt = await res.text().catch(()=> '');
-        const msg = txt || (res.status + ' ' + res.statusText);
-        throw new Error(msg);
-      }
-      return res.json();
-    }
-
-    // ===== โหลด settings แล้ว render chips =====
-    async function loadSettings(){
-      const data = await safeFetch(`${API}/api/settings`);
-      const selected = new Set(data.auto_scan_groups || []);
-
-      // Auto chips
-      elAuto.innerHTML = '';
-      ALL_GROUPS.forEach(([id,label])=>{
-        const c = chip(label, selected.has(id));
-        c.dataset.id = id;
-        c.onclick = ()=> c.classList.toggle('on');
-        elAuto.appendChild(c);
-      });
-
-      // Manual chips
-      elManual.innerHTML = '';
-      ALL_GROUPS.forEach(([id,label])=>{
-        const c = chip(label,false);
-        c.dataset.id = id;
-        c.onclick = ()=> manualScan(id,label,c);
-        elManual.appendChild(c);
-      });
-    }
-
-    // ===== บันทึก settings =====
-    elSave.onclick = async ()=>{
-      try{
-        elSave.disabled = true;
-        elSaveState.textContent = 'กำลังบันทึก...';
-        const groups = [...elAuto.querySelectorAll('.chip.on')].map(b=>b.dataset.id);
-        await safeFetch(`${API}/api/settings`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({ auto_scan_groups: groups })
-        });
-        elSaveState.textContent = 'บันทึกแล้ว';
-        toast('บันทึกตั้งค่าเรียบร้อย');
-      }catch(e){
-        toast(e.message,'error');
-        elSaveState.textContent = '';
-      }finally{
-        elSave.disabled = false;
-      }
-    };
-
-    // ===== Manual scan + refresh table =====
-    async function manualScan(id,label,btn){
-      try{
-        btn.disabled = true;
-        elManualState.textContent = `กำลังสั่งสแกนกลุ่ม ${label}...`;
-        await safeFetch(`${API}/api/run-scan?group=${encodeURIComponent(id)}&manual=1`);
-        elManualState.textContent = '';
-        await refreshSignals();
-        toast('สแกนเสร็จแล้ว');
-      }catch(e){
-        elManualState.textContent = '';
-        toast(e.message,'error');
-      }finally{
-        btn.disabled = false;
-      }
-    }
-
-    // ===== โหลดผลล่าสุด =====
-    async function refreshSignals(){
-      try{
-        elRefresh.disabled = true;
-        elRefreshSpin.style.display = 'inline-block';
-        const data = await safeFetch(`${API}/api/signals`);
-        renderTable(data);
-      }catch(e){
-        toast(e.message,'error');
-      }finally{
-        elRefresh.disabled = false;
-        elRefreshSpin.style.display = 'none';
-      }
-    }
-    elRefresh.onclick = refreshSignals;
-
-    function renderTable(data){
-      elLG.textContent = data.group || '-';
-      elLT.textContent = data.updatedAt || '-';
-      const rows = (data.results || []);
-      elRB.innerHTML = '';
-      if (!rows.length){
-        elRB.innerHTML = `<tr><td colspan="4" class="muted">ไม่พบสัญญาณในรายการสแกนล่าสุด</td></tr>`;
-        return;
-      }
-      for (const r of rows){
-        const tr = document.createElement('tr');
-        const badge = r.signal==='Buy'
-          ? `<span class="badge b-buy">Buy</span>`
-          : `<span class="badge b-sell">Sell</span>`;
-        tr.innerHTML = `
-          <td class="mono">${r.ticker}</td>
-          <td>${badge}</td>
-          <td>${r.price ?? '-'}</td>
-          <td class="mono">${r.timeframe || '-'}</td>
-        `;
-        elRB.appendChild(tr);
-      }
-    }
-
-    // ===== เริ่มต้น =====
-    (async()=>{
-      try{
-        await loadSettings();
-        await refreshSignals();
-      }catch(e){
-        toast(e.message,'error');
-      }
-    })();
-  </script>
+  };
+  $('#btn-refresh').onclick = refresh;
+})();
+</script>
 </body>
 </html>
