@@ -9,16 +9,22 @@
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Inter,Segoe UI,Roboto,Arial}
     .wrap{max-width:1100px;margin:36px auto;padding:0 16px}h1{margin:0 0 18px 0;font-weight:800}
     .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
-    .row{display:flex;flex-wrap:wrap;gap:10px}.chip{padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.03);cursor:pointer;color:#bde0ff}
+    .row{display:flex;flex-wrap:wrap;gap:10px}
+    .chip{padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.03);cursor:pointer;color:#bde0ff}
     .chip.is-on{background:var(--chip);border-color:var(--chipOn)}
     .btn{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#08344a;color:#fff;cursor:pointer}
     .btn.alt{background:#173042}.btn:disabled{opacity:.55;cursor:not-allowed}.muted{color:var(--muted);font-size:13px}
     table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-top:1px solid var(--line);padding:10px 8px;text-align:left}
-    th{color:#9db7cb;font-weight:600;background:rgba(255,255,255,.02)}.sig{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(255,77,79,.12);color:#ffb3b5;border:1px solid rgba(255,77,79,.35)}
+    th{color:#9db7cb;font-weight:600;background:rgba(255,255,255,.02)}
+    .sig{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(255,77,79,.12);color:#ffb3b5;border:1px solid rgba(255,77,79,.35)}
     .topbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.pill{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.03)}
     .toast{position:fixed;right:16px;bottom:16px;background:#07202c;color:#d7f3ff;border:1px solid #164a62;border-radius:10px;padding:10px 12px;display:none}
     .pagination{display:flex;gap:6px;align-items:center}.pagebtn{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);cursor:pointer}
     .pagebtn[disabled]{opacity:.55;cursor:not-allowed}
+    /* ชิป timeframe */
+    .tf{display:inline-flex;gap:6px;align-items:center}
+    .tf .pill{padding:4px 8px}
+    .pill.off{opacity:.45}
   </style>
 </head>
 <body>
@@ -50,7 +56,14 @@
       </div>
     </div>
     <table>
-      <thead><tr><th>Ticker</th><th>Signal</th><th>Price</th><th>Timeframe</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Signal</th>
+          <th>Price</th>
+          <th>Timeframe</th>
+        </tr>
+      </thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -93,7 +106,34 @@ $('#saveAuto').onclick=saveSettings;
 // table/pager
 let currentResults=[], currentGroup='-', currentUpdatedAt=null, currentPage=1;
 function renderPager(){const pager=$('#pager');const pages=Math.max(1,Math.ceil(currentResults.length/PAGE_SIZE));if(pages<=1){pager.style.display='none';pager.innerHTML='';return}pager.style.display='flex';pager.innerHTML='';const prv=document.createElement('button');prv.className='pagebtn';prv.textContent='‹';prv.disabled=currentPage<=1;prv.onclick=()=>{currentPage=Math.max(1,currentPage-1);renderTable()};const info=document.createElement('span');info.className='muted';info.textContent=`หน้า ${currentPage}/${pages}`;const nxt=document.createElement('button');nxt.className='pagebtn';nxt.textContent='›';nxt.disabled=currentPage>=pages;nxt.onclick=()=>{currentPage=Math.min(pages,currentPage+1);renderTable()};pager.append(prv,info,nxt)}
-function renderTable(){const tbody=$('#tbody');$('#latestLabel').textContent=`กลุ่มล่าสุด: ${currentGroup} • อัปเดตเมื่อ: ${currentUpdatedAt||'-'}`;tbody.innerHTML='';const start=(currentPage-1)*PAGE_SIZE;for(const r of currentResults.slice(start,start+PAGE_SIZE)){const tr=document.createElement('tr');tr.innerHTML=`<td>${r.ticker}</td><td><span class="sig">${r.signal}</span></td><td>${r.price??'-'}</td><td>${r.timeframe||''}</td>`;tbody.appendChild(tr)}renderPager()}
+function hasWeekFlag(r){
+  if (Array.isArray(r.timeframes) && r.timeframes.includes('1W')) return true;
+  if (r.timeframe2==='1W' || r.timeframeWeek==='1W' || r.tfWeek==='1W') return true;
+  if (r.week===true) return true;
+  return false;
+}
+function renderTable(){
+  const tbody=$('#tbody');
+  $('#latestLabel').textContent=`กลุ่มล่าสุด: ${currentGroup} • อัปเดตเมื่อ: ${currentUpdatedAt||'-'}`;
+  tbody.innerHTML='';
+  const start=(currentPage-1)*PAGE_SIZE;
+  for (const r of currentResults.slice(start,start+PAGE_SIZE)){
+    const hasW = hasWeekFlag(r);
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.ticker}</td>
+      <td><span class="sig">${r.signal}</span></td>
+      <td>${r.price??'-'}</td>
+      <td>
+        <span class="tf">
+          <span class="pill">1D</span>
+          <span class="pill ${hasW?'':'off'}">1W</span>
+        </span>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+  renderPager();
+}
 async function loadSignals(){try{const r=await fetch('/api/signals');const j=await r.json();currentGroup=j.group||'-';currentUpdatedAt=j.updatedAt||null;currentResults=Array.isArray(j.results)?j.results:[];currentPage=1;renderTable()}catch(e){toast('ดึงผลล้มเหลว')}}
 
 $('#reloadSignals').onclick=loadSignals; $('#refreshBtn').onclick=loadSignals;
@@ -112,7 +152,7 @@ async function runManualBatch(group){
       pill.textContent = total ? `กำลังสแกน: ${done}/${total}` : 'กำลังสแกน...';
       if(!js.nextOffset){ pill.textContent = total ? `สแกนเสร็จแล้ว (${total}/${total})` : 'สแกนเสร็จแล้ว'; break; }
       next = js.nextOffset;
-      await new Promise(s=>setTimeout(s, 200)); // กัน rate-limit
+      await new Promise(s=>setTimeout(s, 200));
     }
     await loadSignals();
   }catch(e){ toast('สั่งสแกนล้มเหลว'); }
