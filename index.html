@@ -21,10 +21,7 @@
     .toast{position:fixed;right:16px;bottom:16px;background:#07202c;color:#d7f3ff;border:1px solid #164a62;border-radius:10px;padding:10px 12px;display:none}
     .pagination{display:flex;gap:6px;align-items:center}.pagebtn{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);cursor:pointer}
     .pagebtn[disabled]{opacity:.55;cursor:not-allowed}
-    /* ชิป timeframe */
-    .tf{display:inline-flex;gap:6px;align-items:center}
-    .tf .pill{padding:4px 8px}
-    .pill.off{opacity:.45}
+    .tf{display:inline-flex;gap:6px;align-items:center}.tf .pill{padding:4px 8px}.pill.off{opacity:.45}
   </style>
 </head>
 <body>
@@ -59,7 +56,8 @@
       <thead>
         <tr>
           <th>Ticker</th>
-          <th>Signal</th>
+          <th>Signal (1D)</th>
+          <th>Signal (1W)</th>
           <th>Price</th>
           <th>Timeframe</th>
         </tr>
@@ -86,32 +84,30 @@ const GROUPS = [
 ];
 const PAGE_SIZE = 50;
 const $ = q=>document.querySelector(q);
-
 function toast(msg){const el=$('#toast');el.textContent=msg;el.style.display='block';clearTimeout(window.__t);window.__t=setTimeout(()=>{el.style.display='none'},2200)}
 function chip(label, on){const d=document.createElement('div');d.className='chip'+(on?' is-on':'');d.textContent=label;return d}
 
 const autoChips=$('#autoChips'), manualChips=$('#manualChips'), selectedAuto=new Set();
-
-// render chips
 GROUPS.forEach(g=>{
   const a=chip(g.label,false);a.dataset.group=g.key;a.onclick=()=>{a.classList.toggle('is-on');if(a.classList.contains('is-on'))selectedAuto.add(g.key);else selectedAuto.delete(g.key)};autoChips.appendChild(a);
   const m=chip(g.label,false);m.onclick=()=>runManualBatch(g.key);manualChips.appendChild(m);
 });
 
-// load/save settings
 async function loadSettings(){try{const r=await fetch('/api/settings');const j=await r.json();const set=new Set(j.auto_scan_groups||[]);selectedAuto.clear();autoChips.querySelectorAll('.chip').forEach(el=>{const k=el.dataset.group;if(set.has(k)){el.classList.add('is-on');selectedAuto.add(k)}else el.classList.remove('is-on')})}catch(_){}} 
 async function saveSettings(){try{const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_scan_groups:[...selectedAuto]})});if(!r.ok){toast(`บันทึกไม่สำเร็จ: HTTP ${r.status}`);return}toast('บันทึกการตั้งค่าแล้ว')}catch(e){toast('บันทึกล้มเหลว')}} 
 $('#saveAuto').onclick=saveSettings;
 
-// table/pager
 let currentResults=[], currentGroup='-', currentUpdatedAt=null, currentPage=1;
 function renderPager(){const pager=$('#pager');const pages=Math.max(1,Math.ceil(currentResults.length/PAGE_SIZE));if(pages<=1){pager.style.display='none';pager.innerHTML='';return}pager.style.display='flex';pager.innerHTML='';const prv=document.createElement('button');prv.className='pagebtn';prv.textContent='‹';prv.disabled=currentPage<=1;prv.onclick=()=>{currentPage=Math.max(1,currentPage-1);renderTable()};const info=document.createElement('span');info.className='muted';info.textContent=`หน้า ${currentPage}/${pages}`;const nxt=document.createElement('button');nxt.className='pagebtn';nxt.textContent='›';nxt.disabled=currentPage>=pages;nxt.onclick=()=>{currentPage=Math.min(pages,currentPage+1);renderTable()};pager.append(prv,info,nxt)}
+
 function hasWeekFlag(r){
   if (Array.isArray(r.timeframes) && r.timeframes.includes('1W')) return true;
   if (r.timeframe2==='1W' || r.timeframeWeek==='1W' || r.tfWeek==='1W') return true;
   if (r.week===true) return true;
   return false;
 }
+function asSig(v){return v?`<span class="sig">${v}</span>`:'-'}
+
 function renderTable(){
   const tbody=$('#tbody');
   $('#latestLabel').textContent=`กลุ่มล่าสุด: ${currentGroup} • อัปเดตเมื่อ: ${currentUpdatedAt||'-'}`;
@@ -119,10 +115,13 @@ function renderTable(){
   const start=(currentPage-1)*PAGE_SIZE;
   for (const r of currentResults.slice(start,start+PAGE_SIZE)){
     const hasW = hasWeekFlag(r);
+    const sigD = r.signalD || r.signal || null;
+    const sigW = r.signalW || (hasW ? (r.signalW ?? r.signal /* fallback */) : null);
     const tr=document.createElement('tr');
     tr.innerHTML = `
       <td>${r.ticker}</td>
-      <td><span class="sig">${r.signal}</span></td>
+      <td>${asSig(sigD)}</td>
+      <td>${sigW ? asSig(sigW) : '-'}</td>
       <td>${r.price??'-'}</td>
       <td>
         <span class="tf">
@@ -138,7 +137,6 @@ async function loadSignals(){try{const r=await fetch('/api/signals');const j=awa
 
 $('#reloadSignals').onclick=loadSignals; $('#refreshBtn').onclick=loadSignals;
 
-// manual batch loop
 async function runManualBatch(group){
   const pill=$('#progressPill');
   let next=0, total=null;
@@ -158,7 +156,6 @@ async function runManualBatch(group){
   }catch(e){ toast('สั่งสแกนล้มเหลว'); }
 }
 
-// init
 loadSettings().then(loadSignals);
 </script>
 </body>
