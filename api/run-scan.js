@@ -1,7 +1,5 @@
 // api/run-scan.js
-// Batch scanner + live symbols + append/merge to signals.json (per group)
-// เพิ่มความสามารถเก็บ "สัญญาณล่าสุด (Last Known)" ของ 1D/1W ไว้ในไฟล์ signals.json
-// เพื่อให้หน้า UI แสดงผลล่าสุดเสมอ ถึงแม้รอบสแกนปัจจุบันจะไม่ได้เกิดสัญญาณใหม่ (ได้ "-")
+// Batch scanner + live symbol sources + merge append into signals.json (per group)
 
 export default async function handler(req, res) {
   try {
@@ -9,23 +7,26 @@ export default async function handler(req, res) {
     const group = (url.searchParams.get("group") || "").toLowerCase();
     if (!group) return res.status(400).json({ error: "missing ?group" });
 
-    const isManual  = ["1","true","yes"].includes((url.searchParams.get("manual")||"").toLowerCase());
-    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 200, 25);
+    const isManual  = toBool(url.searchParams.get("manual"));
+    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 500, 50);
     const cursor    = clampInt(url.searchParams.get("cursor"), 0, 1e9, 0);
 
-    // 1) load symbols (live → fallback)
+    // 1) โหลดรายชื่อสด (มี fallback)
     const allSymbols = await getSymbolsForGroupLiveOrFallback(group);
-    if (!allSymbols.length) return res.status(400).json({ error: `no symbols for group "${group}"` });
+    if (!allSymbols.length) {
+      return res.status(400).json({ error: `no symbols for group "${group}"` });
+    }
 
-    // 2) slice batch
+    // 2) ตัด batch
     const start = isManual ? cursor : 0;
-    const end   = isManual ? Math.min(start + batchSize, allSymbols.length) : Math.min(batchSize, allSymbols.length);
+    const end   = isManual ? Math.min(start + batchSize, allSymbols.length)
+                           : Math.min(batchSize, allSymbols.length);
     const batch = allSymbols.slice(start, end);
 
-    // 3) scan — ใส่ logic จริงของคุณใน scanSymbols()
+    // 3) สแกน (แทนที่ด้วยอินดิเคเตอร์จริงของคุณ)
     const scanned = await scanSymbols(batch);
 
-    // 4) merge + last known signals
+    // 4) รวม/เขียนกลับ (merge ตาม ticker)
     const mergedPayload = await mergeAndWriteSignals({
       group,
       updatedAt: new Date().toISOString(),
@@ -52,17 +53,13 @@ export default async function handler(req, res) {
   }
 }
 
-/* ======================== Scanner (ใส่อินดิเคเตอร์จริง) ======================== */
-/**
- * ใส่ logic อินดิเคเตอร์จริงของคุณ:
- *  - คืนค่า { ticker, signalD: "Buy"|"Sell"|"-", signalW: "Buy"|"Sell"|"-", price, timeframe: "1D" }
- * ในตัวอย่างนี้ยังเป็น placeholder
- */
+/* ========================= Scanner (ใส่อินดิเคเตอร์จริง) ========================= */
 async function scanSymbols(symbols) {
+  // TODO: ใส่ logic อินดิเคเตอร์ 1D/1W จริงของคุณที่นี่
   return symbols.map(ticker => ({
     ticker,
-    signalD: "-",     // ← ใส่ผล 1D จริงของคุณ
-    signalW: "-",     // ← ใส่ผล 1W จริงของคุณ
+    signalD: "Sell",
+    signalW: "-",
     price: null,
     timeframe: "1D"
   }));
@@ -77,6 +74,7 @@ async function getSymbolsForGroupLiveOrFallback(group) {
   } catch (e) {
     console.warn(`[symbols-live] ${group} failed:`, e?.message || e);
   }
+
   // fallback → data/symbols.json
   try {
     const json = await ghReadJSON(
@@ -93,68 +91,148 @@ async function getSymbolsForGroupLiveOrFallback(group) {
 
 async function getSymbolsLive(group) {
   switch (group) {
-    case "sp500":        return await fetchSP500Slickcharts().catch(async () => await fetchSP500Datahub());
-    case "nasdaq100":    return await fetchNasdaq100Wikipedia();
-    case "bitkub":       return await fetchBitkubTHB();
-    case "set50":        return await fetchSETWikipedia("set50");
-    case "set100":       return await fetchSETWikipedia("set100");
-    case "altcoins":     return defaultAltcoins();
-    case "okx_top200":   return defaultOKX();
-    case "binance_top200": return defaultBinance();
-    case "etfs":         return ["SPY","QQQ","VTI","DIA","ARKK","IWM","EEM","GLD","XLK","XLF"];
-    case "gold":         return ["GC=F","XAUUSD=X"];
-    default:             return [];
+    case "sp500":
+      return await fetchSP500_Slickcharts_500()
+              .catch(async () => await fetchSP500_Datahub());
+    case "nasdaq100":
+      // ใช้ slickcharts (อัปเดตบ่อย) เป็นหลัก แทน wiki
+      return await fetchNasdaq100_Slickcharts_100()
+              .catch(async () => await fetchNasdaq100_Wikipedia_100());
+    case "altcoins":
+      return await fetchOKX_TopUSDT(100, { excludeBlueChips:true }); // ตัด BTC/ETH/Stable
+    case "binance_top200":
+      return await fetchBinance_TopUSDT(200);
+    case "okx_top200":
+      return await fetchOKX_TopUSDT(200);
+    case "bitkub":
+      return await fetchBitkub_AllTHB();
+    case "set50":
+      return await fetchSET_Wikipedia("set50", 50);
+    case "set100":
+      return await fetchSET_Wikipedia("set100", 100);
+    case "etfs":
+      return ETFsTop50();
+    case "gold":
+      return ["GC=F", "XAUUSD=X"]; // Futures + Spot
+    default:
+      return [];
   }
 }
 
-// S&P500 (หลัก): slickcharts
-async function fetchSP500Slickcharts() {
+/* ============================ Equity Indexes ============================ */
+
+// S&P500 (หลัก): slickcharts (ครบ ~500)
+async function fetchSP500_Slickcharts_500() {
   const url = "https://www.slickcharts.com/sp500";
   const html = await (await fetch(url, UA())).text();
   const re = /<td class="text-center">([A-Z.\-]{1,7})<\/td>/g;
-  const out = new Set();
-  let m;
-  while ((m = re.exec(html))) out.add(m[1].toUpperCase().replace(/\./g,"-"));
-  const arr = Array.from(out);
-  if (arr.length < 400) throw new Error("slickcharts parse too small");
+  const set = new Set();
+  let m; while ((m = re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
+  const arr = Array.from(set);
+  if (arr.length < 450) throw new Error("slickcharts sp500 parse too small");
   return arr.slice(0, 500);
 }
-// S&P500 (สำรอง)
-async function fetchSP500Datahub() {
+async function fetchSP500_Datahub() {
   const url = "https://datahub.io/core/s-and-p-500-companies/r/constituents.json";
   const r = await fetch(url, UA());
   if (!r.ok) throw new Error(`datahub ${r.status}`);
   const js = await r.json();
-  return js.map(x => String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean);
+  const arr = js.map(x => String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean);
+  if (arr.length < 450) throw new Error("datahub sp500 too small");
+  return arr.slice(0, 500);
 }
-// Nasdaq100
-async function fetchNasdaq100Wikipedia() {
-  const url = "https://en.wikipedia.org/wiki/Nasdaq-100";
+
+// Nasdaq-100: slickcharts → 100 (หลัก) / Wikipedia (รอง)
+async function fetchNasdaq100_Slickcharts_100() {
+  const url = "https://www.slickcharts.com/nasdaq100";
   const html = await (await fetch(url, UA())).text();
+  const re = /<td class="text-center">([A-Z.\-]{1,7})<\/td>/g;
   const set = new Set();
-  const re  = />\s*([A-Z.\-]{1,7})\s*<\/a>\s*<\/td>/g;
-  let m;
-  while ((m = re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
-  const arr = Array.from(set).filter(x => /^[A-Z\-]+$/.test(x));
-  if (arr.length < 80) throw new Error("nas100 parse small");
+  let m; while ((m = re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
+  const arr = Array.from(set);
+  if (arr.length < 90) throw new Error("slickcharts nas100 parse too small");
   return arr.slice(0, 100);
 }
-// SET50/SET100
-async function fetchSETWikipedia(which) {
-  const page = which === "set50" ? "SET50_Index" : "SET100_Index";
-  const url  = `https://en.wikipedia.org/wiki/${page}`;
+async function fetchNasdaq100_Wikipedia_100() {
+  const url = "https://en.wikipedia.org/wiki/Nasdaq-100";
   const html = await (await fetch(url, UA())).text();
-  const set  = new Set();
-  const re   = />([A-Z0-9]{2,6})<\/a><\/td>/g;
-  let m;
-  while ((m = re.exec(html))) set.add(m[1].toUpperCase());
-  let arr = Array.from(set).filter(x => /^[A-Z]{2,6}$/.test(x));
-  if (which === "set50"  && arr.length < 40) throw new Error("set50 parse small");
-  if (which === "set100" && arr.length < 80) throw new Error("set100 parse small");
-  return arr.slice(0, which === "set50" ? 50 : 100);
+  const re = />\s*([A-Z.\-]{1,7})\s*<\/a>\s*<\/td>/g;
+  const set = new Set();
+  let m; while ((m = re.exec(html))) {
+    const t = m[1].toUpperCase().replace(/\./g,"-");
+    if (/^[A-Z\-]+$/.test(t)) set.add(t);
+  }
+  const arr = Array.from(set);
+  if (arr.length < 90) throw new Error("wiki nas100 parse too small");
+  return arr.slice(0, 100);
 }
-// Bitkub (THB pairs)
-async function fetchBitkubTHB() {
+
+/* ============================ Thailand SET ============================ */
+// ใช้ Wikipedia (กึ่งเรียลไทม์ — รายชื่อเปลี่ยนไม่บ่อย) พร้อม regex กว้างขึ้นและ fallback
+async function fetchSET_Wikipedia(which, need) {
+  const page = which === "set50" ? "SET50_Index" : "SET100_Index";
+  const url = `https://en.wikipedia.org/wiki/${page}`;
+  const html = await (await fetch(url, UA())).text();
+
+  const set = new Set();
+  const re = />([A-Z0-9]{2,6})<\/a><\/td>/g;
+  let m; while ((m = re.exec(html))) set.add(m[1].toUpperCase());
+
+  if (set.size < need) {
+    const re2 = /<td>\s*([A-Z0-9]{2,6})\s*<\/td>/g;
+    while ((m = re2.exec(html))) set.add(m[1].toUpperCase());
+  }
+
+  const arr = Array.from(set).filter(x => /^[A-Z0-9]{2,6}$/.test(x));
+  return arr.slice(0, need);
+}
+
+/* ============================ Crypto – OKX/Binance ============================ */
+
+async function fetchOKX_TopUSDT(n = 100, opts = {}) {
+  const url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT";
+  const r = await fetch(url, UA());
+  if (!r.ok) throw new Error(`okx ${r.status}`);
+  const js = await r.json();
+  let list = (js.data || []).map(d => ({
+    symbol: String(d.instId||"").replace(/-/g,""),
+    base: (d.instId||"").split("-")[0],
+    quote: (d.instId||"").split("-")[1],
+    vol: Number(d.vol24h || d.volCcy24h || 0)
+  })).filter(x => x.quote === "USDT");
+
+  list = list.filter(x => !isStable(x.base));
+  if (opts.excludeBlueChips) list = list.filter(x => x.base !== "BTC" && x.base !== "ETH");
+
+  list.sort((a,b) => (b.vol - a.vol));
+  return uniq(list.map(x => x.symbol)).slice(0, n);
+}
+
+async function fetchBinance_TopUSDT(n = 200) {
+  const url = "https://api.binance.com/api/v3/ticker/24hr";
+  const r = await fetch(url, UA());
+  if (!r.ok) throw new Error(`binance ${r.status}`);
+  const js = await r.json();
+
+  let list = js.map(d => ({
+    symbol: String(d.symbol || ""),
+    vol: Number(d.quoteVolume || 0)
+  })).filter(x => x.symbol.endsWith("USDT"));
+
+  list = list.filter(x => {
+    const base = x.symbol.replace("USDT","");
+    return !isStable(base) && !/UPUSDT$|DOWNUSDT$|BULLUSDT$|BEARUSDT$/.test(x.symbol);
+  });
+
+  list.sort((a,b) => (b.vol - a.vol));
+  return uniq(list.map(x => x.symbol)).slice(0, n);
+}
+
+const STABLES = new Set(["USDT","USDC","BUSD","DAI","FDUSD","TUSD","EUR","GBP","TRY","BRL"]);
+const isStable = (base) => STABLES.has(base);
+
+/* ============================ Bitkub ============================ */
+async function fetchBitkub_AllTHB() {
   const url = "https://api.bitkub.com/api/market/symbols";
   const r = await fetch(url, UA());
   if (!r.ok) throw new Error(`bitkub ${r.status}`);
@@ -168,18 +246,16 @@ async function fetchBitkubTHB() {
   return uniq(out).sort();
 }
 
-/* =========================== Defaults for crypto =========================== */
-
-function defaultAltcoins() {
+/* ============================ ETFs Top 50 (curated) ============================ */
+function ETFsTop50(){
   return [
-    "BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","MATICUSDT",
-    "DOGEUSDT","DOTUSDT","LINKUSDT","ATOMUSDT","AVAXUSDT","ARBUSDT",
-    "OPUSDT","SUIUSDT","APTUSDT","NEARUSDT","FILUSDT","TONUSDT",
-    "BCHUSDT","LTCUSDT"
+    "SPY","IVV","VOO","QQQ","VTI","IWM","DIA","EEM","VEA","VTV",
+    "VUG","IWF","IWD","XLK","XLF","XLE","XLY","XLC","XLI","XLV",
+    "XLU","VNQ","LQD","HYG","AGG","BND","TIP","ARKK","SMH","SOXX",
+    "IEMG","SCHD","VIG","IJR","IJH","IWB","IWR","IWN","IWO","IWS",
+    "IWP","IJK","IJS","IYC","IYE","IYF","IYH","IYR","TLT","SHY"
   ];
 }
-function defaultOKX() { return defaultAltcoins(); }
-function defaultBinance() { return defaultAltcoins(); }
 
 /* ================================ GitHub I/O =============================== */
 
@@ -191,7 +267,6 @@ async function ghReadJSON(path, repo, branch) {
   if (!r.ok) throw new Error(`ghRead ${r.status} ${await r.text()}`);
   return r.json();
 }
-
 async function ghWrite(path, repo, branch, content, message) {
   const base = process.env.NEXT_PUBLIC_API_BASE || "";
   const qs = new URLSearchParams({ op: "write", path, repo: repo||"", branch: branch||"" }).toString();
@@ -205,79 +280,8 @@ async function ghWrite(path, repo, branch, content, message) {
   return r.json();
 }
 
-/**
- * mergeAndWriteSignals:
- * - โหลด signals.json เดิม
- * - รวมผลเฉพาะกลุ่มเดียวกัน โดย **ไม่ทับด้วย "-"** และอัปเดต last known (lastD/lastW)
- *   โครงรายการต่อ 1 ticker ที่บันทึก:
- *   { ticker, signalD, signalW, price, timeframe, lastD: {signal, at}, lastW: {signal, at} }
- */
-async function mergeAndWriteSignals(payload) {
-  const repo   = process.env.GH_REPO || process.env.GH_REPO_SYMBOLS;
-  const branch = process.env.GH_BRANCH || "main";
-  const path   = process.env.GH_PATH_SIGNALS || "data/signals.json";
-
-  let prev = {};
-  try { prev = await ghReadJSON(path, repo, branch); } catch {}
-
-  const prevMap = new Map();
-  if (prev?.group === payload.group && Array.isArray(prev?.results)) {
-    for (const r of prev.results) prevMap.set(r.ticker, r);
-  }
-
-  const nowISO = payload.updatedAt || new Date().toISOString();
-
-  for (const r of payload.results) {
-    const old = prevMap.get(r.ticker) || {};
-    const merged = {
-      ticker: r.ticker,
-      // snapshot ปัจจุบัน
-      signalD: r.signalD ?? old.signalD ?? "-",
-      signalW: r.signalW ?? old.signalW ?? "-",
-      price:   r.price ?? old.price ?? null,
-      timeframe: "1D",
-      // last known (ถ้ารอบนี้เป็น "-" จะเก็บของเดิมไว้)
-      lastD: old.lastD || null,
-      lastW: old.lastW || null
-    };
-
-    // อัปเดต lastD เมื่อมีสัญญาณใหม่จริง
-    if (r.signalD && r.signalD !== "-") {
-      merged.lastD = { signal: r.signalD, at: nowISO };
-    }
-    // อัปเดต lastW เมื่อมีสัญญาณใหม่จริง
-    if (r.signalW && r.signalW !== "-") {
-      merged.lastW = { signal: r.signalW, at: nowISO };
-    }
-
-    // ถ้าไม่มี lastD/lastW ใด ๆ เลย ให้ fallback จาก snapshot เดิม (กรณีเพิ่งเริ่มใช้งาน)
-    if (!merged.lastD && merged.signalD && merged.signalD !== "-") {
-      merged.lastD = { signal: merged.signalD, at: nowISO };
-    }
-    if (!merged.lastW && merged.signalW && merged.signalW !== "-") {
-      merged.lastW = { signal: merged.signalW, at: nowISO };
-    }
-
-    prevMap.set(r.ticker, merged);
-  }
-
-  const merged = {
-    group: payload.group,
-    updatedAt: nowISO,
-    results: Array.from(prevMap.values())
-  };
-
-  await ghWrite(path, repo, branch, JSON.stringify(merged, null, 2), `update signals ${payload.group}`);
-  return merged;
-}
-
 /* ================================= Utils ================================== */
-
-const UA = () => ({ headers: { "User-Agent": "signal-dashboard/1.0" } });
-
-function clampInt(v, min, max, def) {
-  const n = parseInt(v ?? "", 10);
-  if (Number.isFinite(n)) return Math.max(min, Math.min(max, n));
-  return def;
-}
+const UA = () => ({ headers: { "User-Agent": "signal-dashboard/1.0 (+vercel)" } });
+function toBool(v){ return ["1","true","yes"].includes(String(v||"").toLowerCase()); }
+function clampInt(v, min, max, def){ const n=parseInt(v??"",10); return Number.isFinite(n)? Math.max(min, Math.min(max,n)) : def; }
 const uniq = arr => Array.from(new Set((arr||[]).map(s => String(s||"").trim()).filter(Boolean)));
