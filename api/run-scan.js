@@ -1,5 +1,5 @@
 // api/run-scan.js
-// Batch scanner with optional server-side chaining + live symbols + merge to signals.json
+// Batch scanner with fast server-side chaining (single GitHub write) + live symbols
 
 export default async function handler(req, res) {
   try {
@@ -7,74 +7,97 @@ export default async function handler(req, res) {
     const group = (url.searchParams.get("group") || "").toLowerCase();
     if (!group) return res.status(400).json({ error: "missing ?group" });
 
-    const isManual = ["1","true","yes"].includes((url.searchParams.get("manual")||"").toLowerCase());
+    const isManual  = ["1","true","yes"].includes((url.searchParams.get("manual")||"").toLowerCase());
+    let   wantChain = ["1","true","yes"].includes((url.searchParams.get("chain")||"").toLowerCase());
 
-    // chain: ให้ API ลูป batch ต่อเองภายในครั้งเดียว
-    let wantChain = ["1","true","yes"].includes((url.searchParams.get("chain")||"").toLowerCase());
-
-    // ค่ามาตรฐานแต่ละกลุ่ม (bitkub มีรายการยาว → chain เอง + batch เล็กลง)
-    const defaultBatch = group === "bitkub" ? 25 : 50;
+    // ค่า default ของแต่ละกลุ่ม
+    const defaultBatch = group === "bitkub" ? 50 : 100;
     if (group === "bitkub" && isManual && url.searchParams.get("chain") == null) {
-      wantChain = true; // เปิด chain อัตโนมัติสำหรับ bitkub
+      wantChain = true; // chain อัตโนมัติสำหรับ Bitkub
     }
 
     const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 500, defaultBatch);
-    let cursor      = clampInt(url.searchParams.get("cursor"), 0, 1e9, 0);
+    let   cursor    = clampInt(url.searchParams.get("cursor"), 0, 1e9, 0);
 
-    // โหลดรายชื่อ (สดก่อน, ไม่ได้ค่อย fallback)
-    const allSymbols = stableUniq(await getSymbolsForGroupLiveOrFallback(group));
+    const allSymbolsRaw = await getSymbolsForGroupLiveOrFallback(group);
+    const allSymbols    = stableUniq(allSymbolsRaw);
     if (!allSymbols.length) return res.status(400).json({ error: `no symbols for group "${group}"` });
 
-    // ฟังก์ชันสแกนหนึ่งก้อน
-    const scanOneBatch = async (start) => {
+    // สแกน 1 ก้อน
+    const scanOne = async (start) => {
       const end   = Math.min(start + batchSize, allSymbols.length);
       const batch = allSymbols.slice(start, end);
       const scanned = await scanSymbols(batch);
+      const nextCursor = end < allSymbols.length ? end : null;
+      return { scanned, start, end, nextCursor };
+    };
+
+    let totalProcessed = 0;
+    let iterations = 0;
+    let nextCursor = cursor;
+
+    // โหมด chain: สแกนรวดเดียวหลาย batch แล้วค่อย merge/write ทีเดียว
+    let accResults = [];
+
+    const maxLoops      = 200;   // กันลูปยาวเกิน
+    const timeBudgetMs  = 40_000; // เพิ่ม budget -> เร็วขึ้น
+    const t0 = Date.now();
+
+    if (wantChain) {
+      do {
+        const { scanned, end, nextCursor: nc } = await scanOne(nextCursor);
+        totalProcessed += scanned.length;
+        accResults = accResults.concat(scanned);
+        iterations += 1;
+        nextCursor = nc ?? end; // เดินต่อ
+
+        if (nc == null) break;                    // ครบแล้ว
+        if (iterations >= maxLoops) break;        // กันลูป
+        if (Date.now() - t0 > timeBudgetMs) break; // กันหมดเวลา
+      } while (true);
+
+      // เขียนกลับ 1 ครั้ง (commit เดียว) -> เร็วกว่า
       const mergedPayload = await mergeAndWriteSignals({
         group,
         updatedAt: new Date().toISOString(),
-        results: scanned
+        results: accResults
       });
-      const nextCursor = end < allSymbols.length ? end : null;
-      return { scanned, mergedPayload, start, end, nextCursor };
-    };
 
-    // โหมดธรรมดา: 1 batch / โหมด chain: ลูปหลาย batch ภายในงบประมาณเวลา
-    let totalProcessed = 0;
-    let lastMerged = null;
-    let iterations = 0;
+      return res.status(200).json({
+        ok: true,
+        group,
+        total: allSymbols.length,
+        processed: totalProcessed,
+        start: cursor,
+        end: Math.min(nextCursor ?? allSymbols.length, allSymbols.length) - 1,
+        nextCursor: (nextCursor != null && nextCursor < allSymbols.length) ? nextCursor : null,
+        batchSize,
+        loops: iterations,
+        savedPreview: mergedPayload
+      });
+    }
 
-    const maxLoops = 100;               // กันลูประยะยาว
-    const timeBudgetMs = 18_000;        // กัน timeout serverless
-    const t0 = Date.now();
+    // โหมด non-chain: ทำทีละ batch (พฤติกรรมเดิม)
+    const { scanned, end, nextCursor: nc } = await scanOne(cursor);
+    totalProcessed = scanned.length;
 
-    do {
-      const { scanned, mergedPayload, start, end, nextCursor } = await scanOneBatch(cursor);
-      totalProcessed += scanned.length;
-      lastMerged = mergedPayload;
-      cursor = nextCursor ?? cursor;
-      iterations += 1;
-
-      // เงื่อนไขหยุด
-      if (!wantChain) break;
-      if (nextCursor == null) break;                 // ครบแล้ว
-      if (iterations >= maxLoops) break;             // กันลูปเกิน
-      if (Date.now() - t0 > timeBudgetMs) break;     // กันหมดเวลาบัดเจ็ต
-    } while (true);
-
-    const endIndex = Math.min(cursor || allSymbols.length, allSymbols.length) - 1;
+    const mergedPayload = await mergeAndWriteSignals({
+      group,
+      updatedAt: new Date().toISOString(),
+      results: scanned
+    });
 
     return res.status(200).json({
       ok: true,
       group,
       total: allSymbols.length,
       processed: totalProcessed,
-      start: isManual ? (cursor ? cursor - totalProcessed : 0) : 0,
-      end: endIndex >= 0 ? endIndex : null,
-      nextCursor: (cursor != null && cursor < allSymbols.length) ? cursor : null,
+      start: cursor,
+      end: end - 1,
+      nextCursor: nc,
       batchSize,
-      loops: iterations,
-      savedPreview: lastMerged || { group, updatedAt: null, results: [] }
+      loops: 1,
+      savedPreview: mergedPayload
     });
   } catch (err) {
     console.error("run-scan error:", err);
@@ -83,12 +106,12 @@ export default async function handler(req, res) {
 }
 
 /* ========================= Scanner (แทนที่ด้วยอินดิเคเตอร์จริงได้) ========================= */
-// ชั่วคราว: มีค่าแน่นอนทั้ง 1D และ 1W เพื่อให้คอลัมน์แสดงผล
+// ชั่วคราว: มีค่าแน่นอนทั้ง 1D/1W ให้คอลัมน์แสดงผลชัวร์
 async function scanSymbols(symbols) {
   return symbols.map(ticker => ({
     ticker,
-    signalD: "Sell",  // TODO: ใส่ logic อินดิเคเตอร์ 1D จริง
-    signalW: "Sell",  // TODO: ใส่ logic อินดิเคเตอร์ 1W จริง
+    signalD: "Sell",  // TODO: ใส่ logic อินดิเคเตอร์ 1D
+    signalW: "Sell",  // TODO: ใส่ logic อินดิเคเตอร์ 1W
     price: null,
     timeframe: "1D"
   }));
@@ -145,7 +168,6 @@ async function getSymbolsLive(group) {
 
 /* -------------------------- แหล่งข้อมูลรายชื่อกลุ่มหลัก -------------------------- */
 
-// S&P500 – Wikipedia (500) → ถ้าน้อยกว่า 400 โยน error เพื่อไป Datahub
 async function fetchSP500Wikipedia() {
   const url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies";
   const html = await (await fetch(url, UA())).text();
@@ -153,13 +175,11 @@ async function fetchSP500Wikipedia() {
   if (!table) throw new Error("sp500: table not found");
   const out = [];
   const cell = /<tr[^>]*>\s*<td[^>]*>\s*([A-Z.\-]{1,7})\s*<\/td>/gi;
-  let m;
-  while ((m = cell.exec(table[0]))) out.push(m[1].toUpperCase().replace(/\./g,"-"));
+  let m; while ((m = cell.exec(table[0]))) out.push(m[1].toUpperCase().replace(/\./g,"-"));
   const arr = stableUniq(out);
   if (arr.length < 400) throw new Error(`sp500 wikipedia parse too small: ${arr.length}`);
   return arr.slice(0, 500);
 }
-// S&P500 – Datahub (สำรอง)
 async function fetchSP500Datahub() {
   const url = "https://datahub.io/core/s-and-p-500-companies/r/constituents.json";
   const r = await fetch(url, UA());
@@ -167,8 +187,6 @@ async function fetchSP500Datahub() {
   const js = await r.json();
   return stableUniq(js.map(x => String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean));
 }
-
-// Nasdaq-100 – Wikipedia (ใช้ title="NASDAQ:XXXX")
 async function fetchNasdaq100Wikipedia() {
   const url = "https://en.wikipedia.org/wiki/Nasdaq-100";
   const html = await (await fetch(url, UA())).text();
@@ -179,8 +197,6 @@ async function fetchNasdaq100Wikipedia() {
   if (arr.length < 90) throw new Error(`nasdaq100 wikipedia parse too small: ${arr.length}`);
   return stableUniq(arr.slice(0, 100));
 }
-
-// SET50 / SET100 – Wikipedia
 async function fetchSETWikipedia(which) {
   const page = which === "set50" ? "SET50_Index" : "SET100_Index";
   const url = `https://en.wikipedia.org/wiki/${page}`;
@@ -195,16 +211,14 @@ async function fetchSETWikipedia(which) {
   if (which === "set100" && arr.length < 80) throw new Error("set100 parse small");
   return stableUniq(arr.slice(0, which === "set50" ? 50 : 100));
 }
-
-// Bitkub – คู่ THB ทั้งหมด
 async function fetchBitkubTHB() {
   const url = "https://api.bitkub.com/api/market/symbols";
   const r = await fetch(url, UA());
   if (!r.ok) throw new Error(`bitkub ${r.status}`);
   const js = await r.json();
   const out = [];
-  for (const it of js?.result || []) {
-    const s = String(it.symbol||"");         // "THB_BTC"
+  for (const it of (js?.result || [])) {
+    const s = String(it.symbol||""); // "THB_BTC"
     const [fiat, coin] = s.split("_");
     if (fiat === "THB" && coin) out.push(`${coin}_THB`);
   }
@@ -252,8 +266,6 @@ async function ghWrite(path, repo, branch, content, message) {
   if (!r.ok) throw new Error(`ghWrite ${r.status} ${await r.text()}`);
   return r.json();
 }
-
-/** รวมผลเดิม + เขียนกลับ */
 async function mergeAndWriteSignals(payload) {
   const repo   = process.env.GH_REPO || process.env.GH_REPO_SYMBOLS;
   const branch = process.env.GH_BRANCH || "main";
