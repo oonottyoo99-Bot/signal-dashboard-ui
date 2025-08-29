@@ -1,275 +1,315 @@
 <!doctype html>
 <html lang="th">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Signal Scanner Dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <style>
-    :root{
-      --bg:#0b0d10; --panel:#12161b; --text:#dfe7ef; --muted:#9aa3ad;
-      --ok:#20c997; --warn:#ffc107; --danger:#ff5d5d; --chip:#0b2731; --chip-on:#0e6e84;
-      --chip-buy:#0e6e2b;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;background:#0b0d10;color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
-    .wrap{max-width:1200px;margin:40px auto;padding:0 16px}
-    h1{font-size:28px;margin:0 0 20px}
-    .row{background:var(--panel);border-radius:14px;padding:16px 16px;margin:14px 0}
-    .chips{display:flex;gap:10px;flex-wrap:wrap}
-    .chip{background:#0f1a22;color:#cfe4f5;border:1px solid #203040;border-radius:999px;padding:8px 14px;font-size:14px;cursor:pointer}
-    .chip .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:8px;vertical-align:1px}
-    .btn{background:#0d3b66;border:1px solid #1a4b77;color:#d9f0ff;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-    .meta{font-size:12px;color:var(--muted)}
-    table{width:100%;border-collapse:collapse;margin-top:10px}
-    th,td{padding:12px 10px;border-bottom:1px solid #1e2a34}
-    th{color:#9fb3c8;text-align:left;font-weight:600}
-    .sig{display:inline-flex;gap:8px}
-    .badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 8px;font-size:12px;border:1px solid var(--chip-on);background:var(--chip);color:#bfe9ff}
-    .badge.warn{border-color:#3a7a1e;background:#0f2a12;color:#aaf1a3}
-    .badge.sell{border-color:#7a3a3a;background:#2a0f12;color:#f1aaaa}
-    .badge.buy{border-color:#2a8f3a;background:#0f2a12;color:#a8f5b8}
-    .kpi{font-size:13px;color:#9ab}
-    .pill{border:1px solid #2a3b4a;background:#0c141b;padding:6px 10px;border-radius:999px;font-size:12px}
-    .right{float:right}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Signal Scanner Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#12161b; --panel2:#0f1318; --text:#d7dee7;
+    --muted:#8ca3b6; --ok:#1fa973; --warn:#ffc107; --danger:#ff4d4f; --chip:#1e2a35; --chip-on:#103d2a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -200px,#12202a 0%,#0b0d10 40%,#0b0d10 100%),var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Arial}
+  .wrap{max-width:1080px;margin:40px auto;padding:0 16px}
+  h1{font-weight:700;letter-spacing:.2px;text-align:center;margin:4px 0 24px}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01)),var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px 14px}
+  .row{display:flex;flex-wrap:wrap;gap:10px}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;background:#0f1a22;border:1px solid rgba(255,255,255,.06);color:var(--text);cursor:pointer;user-select:none}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:#3a4a57;box-shadow:0 0 0 3px rgba(31,169,115,.1)}
+  .chip.on{background:#0f2b1e;border-color:#174d37}
+  .chip.on .dot{background:var(--ok)}
+  .chip.disabled{opacity:.55;pointer-events:none}
+  .btn{padding:10px 14px;border-radius:10px;background:#12415f;border:1px solid #1b5d87;color:#dff0ff;cursor:pointer}
+  .btn.secondary{background:#2a3340;border-color:#3a4655}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .muted{color:var(--muted);font-size:13px}
+  .space{height:10px}
+  .grid{width:100%;border-collapse:collapse;border-spacing:0}
+  .grid th,.grid td{padding:12px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .grid th{color:#a7b5c4;font-weight:600;text-align:left;background:var(--panel2)}
+  .grid tr:hover td{background:rgba(255,255,255,.02)}
+  .badge{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:24px;padding:0 10px;border-radius:999px;font-size:12px}
+  .buy{background:#0d3926;color:#62ffb3;border:1px solid #1fa973}
+  .sell{background:#351519;color:#ffb3b8;border:1px solid #ff4d4f}
+  .flat{background:#1b2330;color:#9fb2c6;border:1px solid #2a394a}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;background:#0e1820;border:1px solid #1a2a36;color:#bcd1e5;font-size:12px}
+  .right{margin-left:auto}
+  .status{font-size:13px;color:#a9bdcf}
+  .kpi{display:flex;gap:8px;align-items:center}
+  .kpi .dot{width:8px;height:8px;border-radius:50%;background:#3a4a57}
+  .kpi.ok .dot{background:var(--ok)}
+  .kpi.busy .dot{background:#e7b416}
+  .kpi.err .dot{background:var(--danger)}
+  .sticky-note{margin-top:8px;font-size:12px;color:#a7b5c4}
+  @media (max-width:720px){ .row{gap:8px} .chip{padding:8px 10px} .btn{padding:9px 12px} }
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Signal Scanner Dashboard</h1>
+<div class="wrap">
+  <h1>Signal Scanner Dashboard</h1>
 
-    <!-- แถวปุ่ม Auto + สถานะตลาด -->
-    <div class="row">
-      <div class="chips" id="auto-chips"></div>
-      <div class="meta right" id="market-clock">สถานะอัปเดต: -</div>
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-        <button class="btn" id="btnSave">บันทึกการตั้งค่า</button>
-        <span class="meta">* Auto-scan จะใส่คิวเป็น batch อัตโนมัติ</span>
-      </div>
+  <!-- แถบ Auto-scan (ไฟเขียวสถานะตลาด & เวลาอัปเดต) -->
+  <div class="card" id="autoPanel">
+    <div class="row" id="marketRow">
+      <!-- chips ตลาด + ไฟสถานะ จะถูกเติมด้วย JS -->
     </div>
-
-    <!-- แถว Manual Scan -->
+    <div class="space"></div>
     <div class="row">
-      <div class="chips" id="manual-chips"></div>
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-        <button class="btn" id="btnRefresh">รีเฟรช</button>
-        <span class="kpi" id="scanStatus">สแกนแล้ว: -</span>
-      </div>
-    </div>
-
-    <!-- ตารางผลลัพธ์ -->
-    <div class="row">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <div class="kpi">กลุ่มล่าสุด: <span id="latestGroup">-</span> • อัปเดตเมื่อ: <span id="latestTime">-</span></div>
-        <button class="btn" id="btnReload">รีเฟรช</button>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th style="width:20%">Ticker</th>
-            <th style="width:20%">Signal (1D)</th>
-            <th style="width:20%">Signal (1W)</th>
-            <th style="width:20%">Price</th>
-            <th style="width:20%">Timeframe</th>
-          </tr>
-        </thead>
-        <tbody id="rows"><tr><td colspan="5" class="meta">ไม่พบสัญญาณในรอบการสแกนล่าสุด</td></tr></tbody>
-      </table>
+      <button class="btn" id="btnSave">บันทึกการตั้งค่า</button>
+      <div class="pill">* Auto-scan จะใส่คิวเป็น batch อัตโนมัติ</div>
+      <div class="right status" id="statusClock"></div>
     </div>
   </div>
 
+  <div class="space"></div>
+
+  <!-- แถบ Manual-scan -->
+  <div class="card">
+    <div class="row" id="manualRow"></div>
+    <div class="space"></div>
+    <div class="row">
+      <button class="btn secondary" id="btnRefresh">รีเฟรช</button>
+      <div class="pill" id="progressPill">สแกนแล้ว: -</div>
+      <div class="right kpi" id="scanKpi"><span class="dot"></span><span class="lbl">พัก</span></div>
+    </div>
+  </div>
+
+  <div class="space"></div>
+
+  <!-- ตารางผลล่าสุด -->
+  <div class="card">
+    <div class="row">
+      <div class="pill" id="currentGroupPill">กลุ่มล่าสุด: -</div>
+      <div class="pill" id="updatedPill">อัปเดตเมื่อ: -</div>
+      <button class="btn secondary right" id="btnSoftRefresh">รีเฟรช</button>
+    </div>
+    <div class="space"></div>
+    <table class="grid" id="tbl">
+      <thead>
+        <tr>
+          <th style="width:32%">Ticker</th>
+          <th style="width:16%">Signal (1D)</th>
+          <th style="width:16%">Signal (1W)</th>
+          <th style="width:16%">Price</th>
+          <th style="width:20%">Timeframe</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="5" class="muted">ไม่พบสัญญาณในการสแกนล่าสุด</td></tr>
+      </tbody>
+    </table>
+    <div class="sticky-note">* ตารางจะค้างผลลัพธ์ไว้จนกว่าจะเปลี่ยนกลุ่มใหม่หรือมีผลชุดใหม่เข้ามา</div>
+  </div>
+</div>
+
 <script>
-const API = location.origin;
+/* --------------------------- state --------------------------- */
 const GROUPS = [
-  { key:"sp500",         label:"S&P 500",        tz:"America/New_York" },
-  { key:"nasdaq100",     label:"Nasdaq 100",     tz:"America/New_York" },
-  { key:"altcoins",      label:"Altcoins (OKX)", tz:"UTC" },
-  { key:"binance_top200",label:"Binance Top 200",tz:"UTC" },
-  { key:"okx_top200",    label:"OKX Top 200",    tz:"UTC" },
-  { key:"bitkub",        label:"Bitkub",         tz:"Asia/Bangkok" },
-  { key:"set50",         label:"SET50",          tz:"Asia/Bangkok" },
-  { key:"set100",        label:"SET100",         tz:"Asia/Bangkok" },
-  { key:"etfs",          label:"ETFs",           tz:"America/New_York" },
-  { key:"gold",          label:"ทองคำ",          tz:"UTC" },
+  {key:"sp500",        name:"S&P 500"},
+  {key:"nasdaq100",    name:"Nasdaq 100"},
+  {key:"altcoins",     name:"Altcoins (OKX)"},
+  {key:"binance_top200", name:"Binance Top 200"},
+  {key:"okx_top200",   name:"OKX Top 200"},
+  {key:"bitkub",       name:"Bitkub"},
+  {key:"set50",        name:"SET50"},
+  {key:"set100",       name:"SET100"},
+  {key:"etfs",         name:"ETFs"},
+  {key:"gold",         name:"ทองคำ"},
 ];
 
-let manualGroup = "sp500";
-let busy = false;
+let currentGroup = null;                         // กลุ่มที่แสดงผลในตารางตอนนี้
+const lastResultsByGroup = new Map();            // group -> {updatedAt, results[]}
+const runningBatch = { busy:false, group:null, cursor:0, total:0, ok:true, timer:null };
 
-// สร้างชิปปุ่ม
-function renderChips(containerId, onClick) {
-  const el = document.getElementById(containerId);
-  el.innerHTML = "";
-  GROUPS.forEach(g => {
-    const d = document.createElement("button");
-    d.className = "chip";
-    d.innerHTML = `<span class="dot"></span>${g.label} <span class="pill" id="pill-${g.key}">สแกนแล้ว (0/0)</span>`;
-    d.onclick = () => onClick(g.key);
-    el.appendChild(d);
-  });
+/* --------------------------- helpers --------------------------- */
+const qs = sel => document.querySelector(sel);
+function fmtTS(ts){ try{ return new Date(ts).toLocaleString() }catch{ return ts||"-"} }
+function chipEl(g, click){
+  const el = document.createElement("div");
+  el.className = "chip";
+  el.innerHTML = `<span class="dot"></span>${g.name}<span class="muted" id="count-${g.key}" style="margin-left:6px"></span>`;
+  el.addEventListener("click", click);
+  return el;
 }
-
-// อ่าน settings
-async function getSettings(){
-  const r = await fetch(`${API}/api/settings`);
-  return r.json();
-}
-
-// เซฟ settings
-document.getElementById("btnSave").onclick = async () => {
-  const body = { auto_scan_groups: GROUPS.map(g=>g.key) }; // ตัวอย่าง: เลือกทุกกลุ่ม
-  await fetch(`${API}/api/settings`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
-  alert("บันทึกแล้ว");
-};
-
-// แสดงสถานะตลาดแบบคร่าว ๆ
-function updateClock(){
+function setMarketLights(){
+  // ไฟตลาด “เปิด/ปิด” (mock): สลับเขียวถ้าเวลาปัจจุบันเป็นวันทำการ 09:30–16:00 น. GMT-4 (NYSE)
   const now = new Date();
-  document.getElementById("market-clock").textContent = `สถานะอัปเดต: ${now.toISOString()}`;
+  const utc = now.getUTCHours();
+  const isNYSEopen = (utc>=13 && utc<20) && (now.getUTCDay()>=1 && now.getUTCDay()<=5);
+  const dots = document.querySelectorAll('#marketRow .chip .dot');
+  dots.forEach(d=>d.style.background = isNYSEopen ? 'var(--ok)' : '#3a4a57');
+  qs('#statusClock').textContent = `สถานะอัปเดต: ${now.toISOString()}`;
 }
-setInterval(updateClock, 30000); updateClock();
+setInterval(setMarketLights, 10_000);
 
-// Manual chips
-renderChips("manual-chips", async (g) => {
-  manualGroup = g;
-  await runScanBatches(g);
+/* --------------------------- render --------------------------- */
+function renderCounts(){
+  for (const {key} of GROUPS){
+    const badge = qs(`#count-${key}`);
+    if (!badge) continue;
+    const rec = lastResultsByGroup.get(key);
+    if (rec?.results?.length){
+      badge.textContent = ` สแกนแล้ว (${rec.results.length}/${rec.total||rec.results.length})`;
+    }else{
+      badge.textContent = ` สแกนแล้ว (0/0)`;
+    }
+  }
+}
+function renderTableFor(groupKey){
+  const rec = lastResultsByGroup.get(groupKey);
+  const tbody = qs('#tbody');
+  qs('#currentGroupPill').textContent = `กลุ่มล่าสุด: ${GROUPS.find(g=>g.key===groupKey)?.name || "-"}`;
+  qs('#updatedPill').textContent = `อัปเดตเมื่อ: ${fmtTS(rec?.updatedAt)||"-"}`;
+
+  // ถ้ายังไม่มีผลของกลุ่มนี้ ให้แสดงข้อความเดิม (ไม่ล้างค่าของกลุ่มก่อนหน้า ถ้าเป็นการสแกนกลุ่มเดิม)
+  if (!rec || !Array.isArray(rec.results) || rec.results.length===0){
+    tbody.innerHTML = `<tr><td colspan="5" class="muted">ไม่พบสัญญาณในการสแกนล่าสุด</td></tr>`;
+    return;
+  }
+
+  // เรียงผล: ถ้า 1D หรือ 1W เป็น Buy → ดันขึ้นก่อน
+  const rows = [...rec.results];
+  rows.sort((a,b)=>{
+    const aBuy = (a.signalD === 'Buy') || (a.signalW === 'Buy');
+    const bBuy = (b.signalD === 'Buy') || (b.signalW === 'Buy');
+    if (aBuy !== bBuy) return aBuy ? -1 : 1;
+    return (a.ticker||'').localeCompare(b.ticker||'');
+  });
+
+  tbody.innerHTML = rows.map(r=>{
+    const b1 = badge(r.signalD);
+    const b2 = badge(r.signalW, true);
+    const tf = safe(r.timeframe)||"1D";
+    const price = (r.price ?? "-");
+    return `<tr>
+      <td>${escapeHtml(r.ticker||"-")}</td>
+      <td>${b1}</td>
+      <td>${b2}</td>
+      <td>${price}</td>
+      <td><span class="pill">${tf}</span></td>
+    </tr>`;
+  }).join('');
+}
+function badge(sig, weekly=false){
+  const s = (sig||"-").toString();
+  let cls = "flat", txt = s;
+  if (s==="Buy"){ cls="buy"; txt="Buy" }
+  else if (s==="Sell"){ cls="sell"; txt="Sell" }
+  return `<span class="badge ${cls}" title="${weekly?'1W':'1D'}">${txt}</span>`;
+}
+const safe = v => (v==null || v==='') ? '-' : v;
+const escapeHtml = (s)=> String(s).replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+
+/* --------------------------- API --------------------------- */
+async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+async function loadLatestSignalsIntoState(){
+  try{
+    const data = await getJSON('/api/signals'); // { group, updatedAt, results[] }
+    if (data && Array.isArray(data.results)){
+      const totalGuess = data.results.length; // ไม่มี total ในไฟล์ signals → ใช้ความยาวล่าสุด
+      lastResultsByGroup.set(data.group, { updatedAt:data.updatedAt, results:data.results, total:totalGuess });
+      if (!currentGroup) currentGroup = data.group;
+      renderCounts();
+      renderTableFor(currentGroup);
+    }
+  }catch(_){}
+}
+
+/* ---------------------- manual scan (batch) ---------------------- */
+async function runManual(groupKey){
+  // ไม่ล้างตารางเพื่อให้ “ค้างแสดงผลเดิม” ตามที่ขอ
+  runningBatch.busy = true;
+  runningBatch.group = groupKey;
+  runningBatch.cursor = 0;
+  runningBatch.ok = true;
+  setKpi('busy','กำลังสแกน...');
+
+  while (runningBatch.busy && runningBatch.group===groupKey){
+    try{
+      const url = `/api/run-scan?group=${encodeURIComponent(groupKey)}&manual=1&batchSize=50&cursor=${runningBatch.cursor}`;
+      const data = await getJSON(url);
+
+      // อัปเดต progress
+      runningBatch.cursor = (data.nextCursor==null) ? null : data.nextCursor;
+      runningBatch.total = data.total || data.savedPreview?.results?.length || 0;
+
+      // เก็บผลสะสมล่าสุดของกลุ่มนี้ (ไม่ล้างตารางจนกว่าจะมีผลใหม่)
+      if (data.savedPreview?.results){
+        lastResultsByGroup.set(groupKey, {
+          updatedAt: data.savedPreview.updatedAt,
+          results: data.savedPreview.results,
+          total: data.total || data.savedPreview.results.length
+        });
+        renderCounts();
+        if (currentGroup===groupKey) renderTableFor(groupKey);
+      }
+
+      qs('#progressPill').textContent = `สแกนแล้ว: ${(lastResultsByGroup.get(groupKey)?.results?.length||0)}/${runningBatch.total||"?"} – กลุ่ม: ${groupKey}`;
+
+      if (data.nextCursor==null) break; // จบ batch
+      // หน่วงนิดเพื่อไม่โหลดหนัก
+      await wait(300);
+    }catch(err){
+      runningBatch.ok = false;
+      console.error('scan failed:', err);
+      break;
+    }
+  }
+
+  // จบการทำงาน
+  runningBatch.busy = false;
+  setKpi(runningBatch.ok?'ok':'err', runningBatch.ok?'สแกนเสร็จแล้ว':'ผิดพลาด');
+  renderCounts();
+  if (currentGroup===groupKey) renderTableFor(groupKey);
+}
+
+function setKpi(state, text){
+  const el = qs('#scanKpi');
+  el.classList.remove('ok','busy','err');
+  el.classList.add(state);
+  el.querySelector('.lbl').textContent = text || '';
+}
+
+const wait = (ms)=> new Promise(r=>setTimeout(r,ms));
+
+/* ------------------------ bootstrap UI ------------------------ */
+function buildChips(){
+  const marketRow = qs('#marketRow');
+  const manualRow = qs('#manualRow');
+  marketRow.innerHTML = ''; manualRow.innerHTML='';
+  for (const g of GROUPS){
+    // auto chips (แค่ไฟสถานะและตัวนับ)
+    const a = chipEl(g, ()=>{ /* reserved */ });
+    a.classList.add('on');
+    marketRow.appendChild(a);
+
+    // manual chips (คลิกเพื่อสแกนกลุ่ม)
+    const m = chipEl(g, ()=>{
+      currentGroup = g.key;                         // เมื่อเปลี่ยนกลุ่ม -> เปลี่ยนเฉพาะตัวชี้ แต่ไม่ล้างตารางจนกว่าจะมีผลใหม่
+      renderCounts();
+      renderTableFor(currentGroup);
+      if (!runningBatch.busy) runManual(g.key);
+    });
+    manualRow.appendChild(m);
+  }
+}
+qs('#btnRefresh').addEventListener('click', ()=>{ if(currentGroup) runManual(currentGroup) });
+qs('#btnSoftRefresh').addEventListener('click', loadLatestSignalsIntoState);
+qs('#btnSave').addEventListener('click', async ()=>{
+  // ตัวอย่าง demo: เซฟ auto_scan_groups ว่างๆ (ถ้าคุณมีฟอร์มจริงให้ส่งค่าตามนั้น)
+  try{
+    await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_scan_groups:[]})});
+    alert('บันทึกแล้ว');
+  }catch{ alert('บันทึกล้มเหลว'); }
 });
 
-// Auto chips (กดแล้วไม่สแกน แค่แสดงสถานะ)
-renderChips("auto-chips", () => {});
-
-// ดึง signals มาใส่ตาราง + จัดเรียงให้ BUY อยู่บนสุด
-async function loadSignals(){
-  const r = await fetch(`${API}/api/signals`);
-  if(!r.ok) return;
-  const js = await r.json();
-  const group = js.group || "-";
-  const t = js.updatedAt ? new Date(js.updatedAt).toISOString() : "-";
-  document.getElementById("latestGroup").textContent = group;
-  document.getElementById("latestTime").textContent = t;
-
-  let rows = Array.isArray(js.results) ? js.results.slice() : [];
-
-  // จัดเรียง: มี BUY (1D หรือ 1W) ก่อนเสมอ, จากนั้น Sell, จากนั้น "-"
-  const rank = (d,w) => {
-    if (String(d).toUpperCase()==="BUY" || String(w).toUpperCase()==="BUY") return 0;
-    if (String(d).toUpperCase()==="SELL"|| String(w).toUpperCase()==="SELL") return 1;
-    return 2;
-  };
-  rows.sort((a,b)=> rank(a.signalD,a.signalW) - rank(b.signalD,b.signalW));
-
-  const tb = document.getElementById("rows");
-  tb.innerHTML = "";
-  if (!rows.length){
-    tb.innerHTML = `<tr><td colspan="5" class="meta">ไม่พบสัญญาณในรอบการสแกนล่าสุด</td></tr>`;
-    return;
-  }
-  for (const it of rows){
-    tb.insertAdjacentHTML("beforeend", `
-      <tr>
-        <td>${it.ticker||"-"}</td>
-        <td><span class="sig">${
-          it.signalD==="Buy"||it.signalD==="BUY" ? `<span class="badge buy">BUY</span>` :
-          it.signalD==="Sell"||it.signalD==="SELL"? `<span class="badge sell">Sell</span>` :
-          `<span class="badge">-</span>`
-        }</span></td>
-        <td><span class="sig">${
-          it.signalW==="Buy"||it.signalW==="BUY" ? `<span class="badge warn">BUY</span>` :
-          it.signalW==="Sell"||it.signalW==="SELL"? `<span class="badge sell">Sell</span>` :
-          `<span class="badge">-</span>`
-        }</span></td>
-        <td>${it.price ?? "-"}</td>
-        <td>${it.timeframe || "1D"}</td>
-      </tr>
-    `);
-  }
-}
-document.getElementById("btnReload").onclick = loadSignals;
-document.getElementById("btnRefresh").onclick = loadSignals;
-
-// เรียกสแกนแบบ batch จนครบ total
-async function runScanBatches(group){
-  if (busy) return;
-  busy = true;
-  try{
-    let cursor = 0, total = 0, done = 0, round = 0;
-    while(true){
-      const url = `${API}/api/run-scan?group=${encodeURIComponent(group)}&manual=1&cursor=${cursor}`;
-      const r = await fetch(url);
-      if(!r.ok){
-        document.getElementById("scanStatus").textContent = `สั่งสแกนล้มเหลว: ${await r.text()}`;
-        break;
-      }
-      const js = await r.json();
-      total = js.total;
-      done += js.processed;
-      cursor = js.nextCursor ?? null;
-      document.getElementById(`pill-${group}`).textContent = `สแกนแล้ว (${Math.min(done,total)}/${total})`;
-      document.getElementById("scanStatus").textContent = `สแกนแล้ว (${Math.min(done,total)}/${total}) – กลุ่ม: ${group}`;
-      // อัปเดตตารางกลางทาง (จะเห็นผลเร็วขึ้น และจะเรียง BUY ไว้บนสุด)
-      if (js.savedPreview) renderTable(js.savedPreview);
-
-      if (cursor == null) break;
-      round++;
-      // ป้องกัน spam exchange: หน่วงเล็กน้อย
-      await new Promise(s=>setTimeout(s, 600));
-    }
-    // ปิดงาน โหลดผลล่าสุดอีกครั้ง
-    await loadSignals();
-  }catch(err){
-    document.getElementById("scanStatus").textContent = `สั่งสแกนล้มเหลว: ${err}`;
-  }finally{
-    busy = false;
-  }
-}
-
-// helper เรนเดอร์ตารางจาก payload savedPreview
-function renderTable(payload){
-  const group = payload.group || "-";
-  const t = payload.updatedAt ? new Date(payload.updatedAt).toISOString() : "-";
-  document.getElementById("latestGroup").textContent = group;
-  document.getElementById("latestTime").textContent = t;
-
-  let rows = Array.isArray(payload.results) ? payload.results.slice() : [];
-  const rank = (d,w) => {
-    if (String(d).toUpperCase()==="BUY" || String(w).toUpperCase()==="BUY") return 0;
-    if (String(d).toUpperCase()==="SELL"|| String(w).toUpperCase()==="SELL") return 1;
-    return 2;
-  };
-  rows.sort((a,b)=> rank(a.signalD,a.signalW) - rank(b.signalD,b.signalW));
-
-  const tb = document.getElementById("rows");
-  tb.innerHTML = "";
-  if (!rows.length){
-    tb.innerHTML = `<tr><td colspan="5" class="meta">ไม่พบสัญญาณในรอบการสแกนล่าสุด</td></tr>`;
-    return;
-  }
-  for (const it of rows){
-    tb.insertAdjacentHTML("beforeend", `
-      <tr>
-        <td>${it.ticker||"-"}</td>
-        <td>${
-          it.signalD?.toUpperCase()==="BUY"  ? `<span class="badge buy">BUY</span>` :
-          it.signalD?.toUpperCase()==="SELL" ? `<span class="badge sell">Sell</span>` :
-          `<span class="badge">-</span>`
-        }</td>
-        <td>${
-          it.signalW?.toUpperCase()==="BUY"  ? `<span class="badge warn">BUY</span>` :
-          it.signalW?.toUpperCase()==="SELL" ? `<span class="badge sell">Sell</span>` :
-          `<span class="badge">-</span>`
-        }</td>
-        <td>${it.price ?? "-"}</td>
-        <td>${it.timeframe || "1D"}</td>
-      </tr>
-    `);
-  }
-}
-
-// เริ่มต้น
-(async function init(){
-  loadSignals();
-})();
+buildChips();
+setMarketLights();
+loadLatestSignalsIntoState();
 </script>
 </body>
 </html>
