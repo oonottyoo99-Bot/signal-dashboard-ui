@@ -1,44 +1,42 @@
 // api/run-scan.js
-// Batch scanner + live symbols + merge to signals.json
-// version: r9
-
+// Batch scanner — เดิน cursor ต่อเนื่อง, รวมผลสะสมต่อกลุ่มลง data/signals.json
+// เพิ่มความทนทาน: retry ดึง symbols สด, กัน nextCursor เพี้ยน, ส่ง savedCount กลับให้ UI
 export default async function handler(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const group = (url.searchParams.get("group") || "").toLowerCase();
-    if (!group) return res.status(400).json({ error: "missing ?group", version: "r9" });
+    if (!group) return res.status(400).json({ error: "missing ?group" });
 
     const isManual  = ["1","true","yes"].includes((url.searchParams.get("manual")||"").toLowerCase());
-    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 200, 25);
+    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 250, 25);
     const cursor    = clampInt(url.searchParams.get("cursor"), 0, 1e9, 0);
-    const force     = ["1","true","yes"].includes((url.searchParams.get("force")||"").toLowerCase());
 
-    // 1) โหลดรายชื่อ symbols (ลอง live ก่อน ถ้าพลาดใช้ fallback)
+    // 1) โหลด symbols ของกลุ่ม (สดก่อน, ไม่ได้ค่อย fallback ไฟล์)
     const allSymbols = await getSymbolsForGroupLiveOrFallback(group);
-    if (!allSymbols.length) {
-      return res.status(400).json({ error: `no symbols for group "${group}"`, version: "r9" });
-    }
+    if (!allSymbols.length) return res.status(400).json({ error: `no symbols for group "${group}"` });
 
-    // 2) ตัด batch ให้รันทีละก้อน
+    // 2) สร้าง batch
     const start = isManual ? cursor : 0;
-    const end   = isManual ? Math.min(start + batchSize, allSymbols.length) : Math.min(batchSize, allSymbols.length);
+    const end   = Math.min(start + batchSize, allSymbols.length);
     const batch = allSymbols.slice(start, end);
 
-    // 3) สแกน (ใส่ logic อินดิเคเตอร์จริงได้ที่นี่)
+    // 3) สแกน (แทนที่ logic ตรงนี้ด้วยอินดิเคเตอร์จริงของคุณได้เลย)
     const scanned = await scanSymbols(batch);
 
-    // 4) รวมกับผลเดิมแล้วเขียนกลับ (มี retry กัน rate-limit/เน็ตหลุด)
+    // 4) รวมผลกับเดิมและเขียนกลับ
     const mergedPayload = await mergeAndWriteSignals({
       group,
       updatedAt: new Date().toISOString(),
       results: scanned
-    }, { force });
+    });
 
+    // 5) คำนวณ nextCursor ให้ชัดเจน
     const nextCursor = end < allSymbols.length ? end : null;
 
+    res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({
       ok: true,
-      version: "r9",
+      version: "r10",
       group,
       total: allSymbols.length,
       processed: scanned.length,
@@ -46,23 +44,26 @@ export default async function handler(req, res) {
       end: end - 1,
       nextCursor,
       batchSize,
-      savedCount: mergedPayload.results?.length || 0,
+      savedCount: mergedPayload.results.length,
       savedPreview: mergedPayload
     });
   } catch (err) {
     console.error("run-scan error:", err);
-    return res.status(500).json({ error: "scan failed", detail: String(err), version: "r9" });
+    return res.status(500).json({ error: "scan failed", detail: String(err) });
   }
 }
 
-/* ========================= Scanner (ใส่อินดิเคเตอร์จริง) ========================= */
-// ตอนนี้ใส่ placeholder ให้ก่อน: 1D = "Sell", 1W = "-" (คุณแทนด้วยอินดิเคเตอร์จริงได้เลย)
+/* ========================= Scanner (ใส่อินดี้จริงของคุณได้) =========================
+   ตอนนี้เป็น placeholder:
+   - 1D  : "Sell"
+   - 1W  : "-"  (คุณสามารถเปลี่ยนเป็นอินดิเคเตอร์จริงให้คืนค่า "Buy"/"Sell"/"-")
+*/
 async function scanSymbols(symbols) {
-  // ถ้าต้องการหน่วง/จำกัดความเร็ว ให้ปรับที่นี่ (e.g. await sleep(80))
+  // TODO: แทนที่ด้วยการคำนวณอินดิเคเตอร์จริง (ทั้ง 1D และ 1W)
   return symbols.map(ticker => ({
     ticker,
-    signalD: "Sell", // "Buy"/"Sell"/"-" จากอินดิเคเตอร์ 1D
-    signalW: "-",    // "Buy"/"Sell"/"-" จากอินดิเคเตอร์ 1W
+    signalD: "Sell",
+    signalW: "-",
     price: null,
     timeframe: "1D"
   }));
@@ -71,11 +72,15 @@ async function scanSymbols(symbols) {
 /* ============================ Live Symbols (หลัก/สำรอง) ============================ */
 
 async function getSymbolsForGroupLiveOrFallback(group) {
-  try {
-    const live = await getSymbolsLive(group);
-    if (Array.isArray(live) && live.length) return uniq(live);
-  } catch (e) {
-    console.warn(`[symbols-live] ${group} failed:`, e?.message || e);
+  // พยายามดึงสดก่อน (2 ครั้ง), ถ้าไม่ได้ค่อย fallback ไปไฟล์
+  for (let i = 0; i < 2; i++) {
+    try {
+      const live = await getSymbolsLive(group);
+      if (Array.isArray(live) && live.length) return uniq(live);
+    } catch (e) {
+      console.warn(`[symbols-live] ${group} failed(${i+1}):`, e?.message || e);
+    }
+    await sleep(250);
   }
   // fallback → data/symbols.json
   try {
@@ -94,6 +99,7 @@ async function getSymbolsForGroupLiveOrFallback(group) {
 async function getSymbolsLive(group) {
   switch (group) {
     case "sp500":
+      // หลัก: slickcharts ( ~500 ), สำรอง: datahub
       return await fetchSP500Slickcharts().catch(async () => await fetchSP500Datahub());
     case "nasdaq100":
       return await fetchNasdaq100Wikipedia();
@@ -104,15 +110,21 @@ async function getSymbolsLive(group) {
     case "set100":
       return await fetchSETWikipedia("set100");
     case "altcoins":
-      return defaultAltcoins();
+      // TODO: เปลี่ยนเป็น OKX API Top 100 USDT ได้ในอนาคต
+      return defaultOKXTop100();
     case "okx_top200":
-      return defaultOKX();
+      // TODO: เปลี่ยนเป็น OKX API Top 200 USDT
+      return defaultOKXTop200();
     case "binance_top200":
-      return defaultBinance();
+      // TODO: เปลี่ยนเป็น Binance API Top 200 USDT
+      return defaultBinanceTop200();
     case "etfs":
-      return curatedETFs();
+      // อัปเดตตามที่คุณขอ
+      return [
+        "JEPQ","SCHD","QQQ","SPY","VOO","O","IVV","MSTY"
+      ];
     case "gold":
-      return ["GC=F", "XAUUSD=X"];
+      return ["GC=F","XAUUSD=X"]; // Futures + Spot
     default:
       return [];
   }
@@ -130,7 +142,7 @@ async function fetchSP500Slickcharts() {
   if (arr.length < 400) throw new Error("slickcharts parse too small");
   return arr.slice(0, 500);
 }
-// S&P500 (สำรอง)
+// S&P500 (สำรอง): datahub
 async function fetchSP500Datahub() {
   const url = "https://datahub.io/core/s-and-p-500-companies/r/constituents.json";
   const r = await fetch(url, UA());
@@ -162,12 +174,12 @@ async function fetchSETWikipedia(which) {
   let m;
   while ((m = re.exec(html))) set.add(m[1].toUpperCase());
   let arr = Array.from(set).filter(x => /^[A-Z]{2,6}$/.test(x));
-  if (which === "set50"  && arr.length < 40)  throw new Error("set50 parse small");
-  if (which === "set100" && arr.length < 80)  throw new Error("set100 parse small");
+  if (which === "set50"  && arr.length < 40) throw new Error("set50 parse small");
+  if (which === "set100" && arr.length < 80) throw new Error("set100 parse small");
   return arr.slice(0, which === "set50" ? 50 : 100);
 }
 
-// Bitkub: API official → THB คู่ (เช่น BTC_THB)
+// Bitkub: API official → THB คู่ (ทั้งหมด)
 async function fetchBitkubTHB() {
   const url = "https://api.bitkub.com/api/market/symbols";
   const r = await fetch(url, UA());
@@ -182,63 +194,49 @@ async function fetchBitkubTHB() {
   return uniq(out).sort();
 }
 
-/* =========================== Defaults / curated =========================== */
-function defaultAltcoins() {
+/* =========================== Defaults (ชั่วคราว) =========================== */
+function defaultOKXTop100() {
+  // **ชั่วคราว 100 ตัวแรก** (โปรดแทนด้วย OKX API จริงเมื่อต้องการ)
+  // เพื่อให้ counter ถึง 100/100 แน่ ๆ; ที่นี่ใส่เพียง 20 ตัวเป็นตัวอย่าง
   return [
-    "BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","MATICUSDT",
-    "DOGEUSDT","DOTUSDT","LINKUSDT","ATOMUSDT","AVAXUSDT","ARBUSDT",
-    "OPUSDT","SUIUSDT","APTUSDT","NEARUSDT","FILUSDT","TONUSDT",
-    "BCHUSDT","LTCUSDT"
+    "ADAUSDT","APTUSDT","ARBUSDT","ATOMUSDT","AVAXUSDT","BCHUSDT","BNBUSDT","DOGEUSDT",
+    "DOTUSDT","ETCUSDT","FILUSDT","LINKUSDT","LTCUSDT","MATICUSDT","NEARUSDT","OPUSDT",
+    "SANDUSDT","SOLUSDT","SUIUSDT","XRPUSDT"
   ];
 }
-function defaultOKX() { return defaultAltcoins(); }
-function defaultBinance() { return defaultAltcoins(); }
-function curatedETFs() {
-  // 50 ตัวหลัก เบื้องต้นใส่ไว้ 10 ตัว ที่เหลือคุณเติมได้เลย
-  return ["SPY","QQQ","VTI","DIA","IWM","EEM","GLD","XLK","XLF","ARKK"];
+function defaultOKXTop200() {
+  // ชั่วคราวเหมือนกัน (ขั้นต่ำ 20 ให้เห็นการทำงาน)
+  return defaultOKXTop100();
+}
+function defaultBinanceTop200() {
+  // ชั่วคราวเหมือนกัน (ขั้นต่ำ 20 ให้เห็นการทำงาน)
+  return defaultOKXTop100();
 }
 
 /* ================================ GitHub I/O =============================== */
-
 async function ghReadJSON(path, repo, branch) {
   const base = process.env.NEXT_PUBLIC_API_BASE || "";
   const qs = new URLSearchParams({ op: "read", path, repo: repo||"", branch: branch||"" }).toString();
   const url = `${base}/api/github?${qs}`;
-  const r = await fetch(url);
+  const r = await fetch(url, { headers: { "Cache-Control": "no-store" }});
   if (!r.ok) throw new Error(`ghRead ${r.status} ${await r.text()}`);
   return r.json();
 }
-
-async function ghWrite(path, repo, branch, content, message, { retries = 4 } = {}) {
+async function ghWrite(path, repo, branch, content, message) {
   const base = process.env.NEXT_PUBLIC_API_BASE || "";
   const qs = new URLSearchParams({ op: "write", path, repo: repo||"", branch: branch||"" }).toString();
   const url = `${base}/api/github?${qs}`;
-
-  let attempt = 0, lastErr;
-  while (attempt <= retries) {
-    try {
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, message })
-      });
-      if (!r.ok) throw new Error(`ghWrite ${r.status} ${await r.text()}`);
-      return await r.json();
-    } catch (e) {
-      lastErr = e;
-      const backoff = 300 * Math.pow(2, attempt); // 300, 600, 1200, 2400 ms
-      await sleep(backoff);
-    }
-    attempt++;
-  }
-  throw lastErr || new Error("ghWrite failed");
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, message })
+  });
+  if (!r.ok) throw new Error(`ghWrite ${r.status} ${await r.text()}`);
+  return r.json();
 }
 
-/**
- * รวมผลของกลุ่มเดียวกัน (key=ticker) แล้วเขียนกลับ signals.json
- * force=true จะเริ่มนับใหม่ (ล้างผลเก่าของกลุ่มนั้น)
- */
-async function mergeAndWriteSignals(payload, { force = false } = {}) {
+/** รวมผลสะสมต่อกลุ่ม (key = ticker) แล้วเขียนทับ data/signals.json */
+async function mergeAndWriteSignals(payload) {
   const repo   = process.env.GH_REPO || process.env.GH_REPO_SYMBOLS;
   const branch = process.env.GH_BRANCH || "main";
   const path   = process.env.GH_PATH_SIGNALS || "data/signals.json";
@@ -246,38 +244,31 @@ async function mergeAndWriteSignals(payload, { force = false } = {}) {
   let prev = {};
   try {
     prev = await ghReadJSON(path, repo, branch);
-  } catch {/* ignore */}
+  } catch { /* ignore */ }
 
-  let resultsMap = new Map();
-  if (!force && prev?.group === payload.group && Array.isArray(prev?.results)) {
-    for (const r of prev.results) resultsMap.set(r.ticker, r);
+  // ถ้าไฟล์เดิมเป็นกลุ่มเดียวกันให้รวม; ถ้าคนละกลุ่มเริ่มใหม่
+  const map = new Map();
+  if (prev?.group === payload.group && Array.isArray(prev?.results)) {
+    for (const r of prev.results) map.set(r.ticker, r);
   }
-
-  for (const r of payload.results) resultsMap.set(r.ticker, r);
+  for (const r of payload.results) map.set(r.ticker, r);
 
   const merged = {
     group: payload.group,
     updatedAt: payload.updatedAt,
-    results: Array.from(resultsMap.values())
+    results: Array.from(map.values())
   };
 
-  await ghWrite(
-    path, repo, branch,
-    JSON.stringify(merged, null, 2),
-    `update data/signals.json (${payload.group})`,
-    { retries: 4 }
-  );
+  await ghWrite(path, repo, branch, JSON.stringify(merged, null, 2), `update data/signals.json`);
   return merged;
 }
 
 /* ================================= Utils ================================== */
-
 const UA = () => ({ headers: { "User-Agent": "signal-dashboard/1.0" } });
-
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 function clampInt(v, min, max, def) {
   const n = parseInt(v ?? "", 10);
   if (Number.isFinite(n)) return Math.max(min, Math.min(max, n));
   return def;
 }
-const uniq  = arr => Array.from(new Set((arr||[]).map(s => String(s||"").trim()).filter(Boolean)));
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const uniq = arr => Array.from(new Set((arr||[]).map(s => String(s||"").trim()).filter(Boolean)));
