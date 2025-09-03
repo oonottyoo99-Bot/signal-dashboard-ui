@@ -1,292 +1,272 @@
 // api/run-scan.js
-// Batch scan + live symbols (Node runtime) + hard guarantees for counts + robust fallbacks
+// Self-contained batch scanner + live symbol sources (with safe fallbacks)
+// No GH dependencies, no external state required.
+// Runtime: Node.js (Vercel serverless default). 
 
-export const config = { runtime: "nodejs" };
+export const config = {
+  runtime: "nodejs",
+};
 
-const DEF_BATCH = 100;      // เริ่มทีละ 100 เร็วกว่า
-const MAX_BATCH = 300;      // กันไม่ให้เกิน
-const TIMEOUT_MS = 15000;
+let MEM_CACHE = {
+  // symbols: { group -> [tickers] }
+  symbols: {},
+  // last scans: { group -> { updatedAt, results:[{ticker,signalD,signalW,price,timeframe}] } }
+  scans: {},
+};
 
-/* ============================== Handler ============================== */
+// -------------- HTTP Handler -----------------
 export default async function handler(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const group = (url.searchParams.get("group") || "").toLowerCase();
-    if (!group) return res.status(400).json({ error: "missing ?group" });
+    if (!group) return json(res, 400, { error: "missing ?group" });
 
-    const isManual  = isTrue(url.searchParams.get("manual"));
-    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, MAX_BATCH, DEF_BATCH);
+    const isManual  = ["1","true","yes"].includes((url.searchParams.get("manual")||"").toLowerCase());
+    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 500, 50);
     const cursor    = clampInt(url.searchParams.get("cursor"), 0, 1e9, 0);
 
-    // 1) get full list
-    const symbols = await getSymbols(group);
-    if (!symbols.length) return res.status(400).json({ error: `no symbols for ${group}` });
+    // 1) get symbols (live first, fallback if needed)
+    const allSymbols = await getSymbols(group);
+    if (!allSymbols.length) return json(res, 500, { error: `no symbols for ${group}` });
 
-    // 2) cut batch
+    // 2) batching
     const start = isManual ? cursor : 0;
-    const end   = isManual ? Math.min(start + batchSize, symbols.length) : Math.min(batchSize, symbols.length);
-    const batch = symbols.slice(start, end);
+    const end   = Math.min(start + batchSize, allSymbols.length);
+    const batch = allSymbols.slice(start, end);
 
-    // 3) scan indicators (ใส่สูตรจริงแทนได้)
+    // 3) scan batch (PUT YOUR REAL INDICATOR HERE)
     const scanned = await scanSymbols(batch);
 
-    // 4) merge to data/signals.json
-    const merged = await mergeAndWriteSignals({
-      group, updatedAt: new Date().toISOString(), results: scanned
-    });
+    // 4) merge into memory (acts like signals.json)
+    const merged = mergeToMemory(group, scanned);
 
-    const nextCursor = end < symbols.length ? end : null;
+    const nextCursor = end < allSymbols.length ? end : null;
 
-    res.status(200).json({
+    return json(res, 200, {
       ok: true,
-      version: "r13",
+      version: "r10",
       group,
-      total: symbols.length,
+      total: allSymbols.length,
       processed: scanned.length,
       start,
       end: end - 1,
       nextCursor,
       batchSize,
-      savedPreview: merged
+      savedCount: merged.results.length,
+      savedPreview: merged,
     });
   } catch (e) {
-    console.error("run-scan failed:", e);
-    res.status(500).json({ error: "scan failed", detail: String(e) });
+    console.error("run-scan error:", e);
+    return json(res, 500, { error: "scan failed", detail: String(e?.message || e) });
   }
 }
 
-/* ======================= Indicator hooks (mock) ======================= */
-async function compute1D(ticker){ return "Sell"; }
-async function compute1W(ticker){ return "Sell"; }
+// -------------- Scanner (ใส่ logic อินดิเคเตอร์จริงที่นี่) --------------
+async function scanSymbols(symbols) {
+  // TODO: แทนที่ด้วย logic จริงของคุณ
+  // เดโม: ทำสัญญาณ 1D = "Sell" ทุกตัว, 1W = "Sell" ด้วย
+  return symbols.map(ticker => ({
+    ticker,
+    signalD: "Sell",
+    signalW: "Sell",
+    price: null,
+    timeframe: "1D",
+  }));
+}
 
-async function scanSymbols(list){
-  const out = [];
-  for (const t of list){
-    const [d,w] = await Promise.all([compute1D(t), compute1W(t)]);
-    out.push({ ticker: t, signalD: d || "-", signalW: w || "-", price: null, timeframe: "1D" });
+// -------------- Symbol Sources --------------
+async function getSymbols(group) {
+  // cache
+  if (Array.isArray(MEM_CACHE.symbols[group]) && MEM_CACHE.symbols[group].length) {
+    return MEM_CACHE.symbols[group];
   }
+
+  let out = [];
+  try {
+    switch (group) {
+      case "sp500":
+        out = await fetchSP500_Slickcharts();         // ~500
+        if (out.length < 400) out = await fetchSP500_Datahub();
+        break;
+      case "nasdaq100":
+        out = await fetchNasdaq100_Wikipedia();       // ~100
+        break;
+      case "altcoins":
+        out = await topOKX_USDT(100);                 // top 100 USDT spot from OKX
+        break;
+      case "binance_top200":
+        out = await topBinance_USDT(200);             // top 200 USDT spot from Binance
+        break;
+      case "okx_top200":
+        out = await topOKX_USDT(200);                 // top 200 USDT spot from OKX
+        break;
+      case "bitkub":
+        out = await bitkub_THB_All();                 // all THB pairs
+        break;
+      case "set50":
+        out = await fetchSET_fromWikipedia(50);       // 50
+        break;
+      case "set100":
+        out = await fetchSET_fromWikipedia(100);      // 100
+        break;
+      case "etfs":
+        out = curatedETFs();                          // curated 50 (สั้นกว่า: 12 หลักๆ)
+        break;
+      case "gold":
+        out = ["GC=F", "XAUUSD=X"];                   // Futures + Spot
+        break;
+      default:
+        out = [];
+    }
+  } catch (e) {
+    console.warn(`[symbols:${group}] live failed:`, e?.message || e);
+    out = [];
+  }
+
+  // fallback เบื้องต้นถ้า live ว่าง
+  if (!out.length) {
+    out = fallback(group);
+  }
+
+  out = uniq(out);
+  MEM_CACHE.symbols[group] = out;
   return out;
 }
 
-/* ======================== Symbol sources (live) ======================= */
-async function getSymbols(group){
-  switch (group){
-    case "sp500":          return await sp500();            // 500
-    case "nasdaq100":      return await nas100();           // 100
-    case "altcoins":       return await okxAltTop100();     // 100 alt
-    case "binance_top200": return await binanceTopUSDT(200);// 200
-    case "okx_top200":     return await okxTopUSDT(200);    // 200
-    case "bitkub":         return await bitkubTHB();        // ทุกคู่ THB
-    case "set50":          return await setIndex("set50");  // 50
-    case "set100":         return await setIndex("set100"); // 100 (บางที wiki หล่นเล็กน้อย)
-    case "etfs":           return curatedETFs();
-    case "gold":           return ["GC=F","XAUUSD=X"];
-    default:               return [];
-  }
-}
-
-/* ---- S&P500 (ต้อง 500) ---- */
-async function sp500(){
-  return await pickFirst([
-    async ()=> fromDataHubSP500(500),
-    async ()=> fromGitHubSP500(500),
-    async ()=> fromSlickchartsSP500(500)
-  ], 500);
-}
-async function fromDataHubSP500(n){
-  const r = await fetchT("https://datahub.io/core/s-and-p-500-companies/r/constituents.json");
-  if (!r.ok) throw new Error("datahub sp500 "+r.status);
-  const js = await r.json();
-  const arr = js.map(x=>String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean);
-  if (arr.length<n) throw new Error("datahub too small");
-  return arr.slice(0,n);
-}
-async function fromGitHubSP500(n){
-  const r = await fetchT("https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.json");
-  if (!r.ok) throw new Error("github sp500 "+r.status);
-  const js = await r.json();
-  const arr = js.map(x=>String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean);
-  if (arr.length<n) throw new Error("github too small");
-  return arr.slice(0,n);
-}
-async function fromSlickchartsSP500(n){
-  const r = await fetchT("https://r.jina.ai/http://www.slickcharts.com/sp500"); // proxy snapshot
-  if (!r.ok) throw new Error("slickcharts "+r.status);
-  const h = await r.text();
-  const set = new Set(); let m;
-  const re = /<td[^>]*class="text-center"[^>]*>\s*([A-Z.\-]{1,7})\s*<\/td>/g;
-  while ((m = re.exec(h))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
+// ------- Live fetchers -------
+async function fetchSP500_Slickcharts() {
+  const html = await (await fetch("https://www.slickcharts.com/sp500", UA())).text();
+  // parse column "Symbol" (works with slickcharts)
+  const re = /<td class="text-center">([A-Z.\-]{1,7})<\/td>/g;
+  const set = new Set();
+  let m;
+  while ((m = re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g, "-"));
   const arr = Array.from(set);
-  if (arr.length<n) throw new Error("slick parse small");
-  return arr.slice(0,n);
+  return arr.slice(0, 500);
 }
-
-/* ---- Nasdaq100 (ต้อง 100) ---- */
-async function nas100(){
-  return await pickFirst([
-    async ()=> fromWikipediaNas100(100),
-    async ()=> fromGitHubNas100(100)
-  ], 100);
-}
-async function fromWikipediaNas100(n){
-  const r = await fetchT("https://r.jina.ai/http://en.wikipedia.org/wiki/Nasdaq-100");
-  if (!r.ok) throw new Error("wiki nas "+r.status);
-  const h = await r.text();
-  const set = new Set(); let m;
-  const re = />\s*([A-Z.\-]{1,7})\s*<\/a>\s*<\/td>/g;
-  while ((m = re.exec(h))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
-  const arr = Array.from(set).filter(x=>/^[A-Z\-]+$/.test(x));
-  if (arr.length<n) throw new Error("nas small");
-  return arr.slice(0,n);
-}
-async function fromGitHubNas100(n){
-  const r = await fetchT("https://raw.githubusercontent.com/tonybenoy/nasdaq-100-list/main/nasdaq_100_list.json");
-  if (!r.ok) throw new Error("github nas "+r.status);
+async function fetchSP500_Datahub() {
+  const r = await fetch("https://datahub.io/core/s-and-p-500-companies/r/constituents.json", UA());
+  if (!r.ok) throw new Error(`datahub ${r.status}`);
   const js = await r.json();
-  const arr = (js?.tickers||js||[]).map(s=>String(s||"").toUpperCase().replace(/\./g,"-")).filter(Boolean);
-  if (arr.length<n) throw new Error("github nas small");
-  return arr.slice(0,n);
+  return js.map(x => String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean).slice(0, 500);
+}
+async function fetchNasdaq100_Wikipedia() {
+  const html = await (await fetch("https://en.wikipedia.org/wiki/Nasdaq-100", UA())).text();
+  const set = new Set();
+  const re = />\s*([A-Z.\-]{1,7})\s*<\/a>\s*<\/td>/g;
+  let m;
+  while ((m = re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
+  const arr = Array.from(set).filter(x => /^[A-Z\-]+$/.test(x));
+  return arr.slice(0, 100);
 }
 
-/* ---- SET50/SET100 ---- */
-async function setIndex(which){
-  const need = which==="set50" ? 50 : 100;
-  const r = await fetchT(`https://r.jina.ai/http://en.wikipedia.org/wiki/${which==="set50"?"SET50_Index":"SET100_Index"}`);
-  if (!r.ok) throw new Error("wiki "+which+" "+r.status);
-  const h = await r.text();
-  const set = new Set(); let m;
-  const re = />([A-Z0-9]{2,6})<\/a><\/td>/g;
-  while ((m = re.exec(h))) set.add(m[1].toUpperCase());
-  const arr = Array.from(set).filter(x=>/^[A-Z0-9]{2,6}$/.test(x));
-  if (arr.length < need-5) throw new Error(which+" small");
-  return arr.slice(0,need);
+async function topBinance_USDT(limit) {
+  // pull 24hr tickers and sort by quoteVolume desc
+  const r = await fetch("https://api.binance.com/api/v3/ticker/24hr");
+  if (!r.ok) throw new Error(`binance ${r.status}`);
+  const js = await r.json();
+  const list = js
+    .filter(x => x.symbol.endsWith("USDT"))
+    .filter(x => !/UPUSDT$|DOWNUSDT$|BULLUSDT$|BEARUSDT$/.test(x.symbol))
+    .map(x => ({ s: x.symbol.toUpperCase() }))
+    .sort((a, b) => (Number(b.q) || 0) - (Number(a.q) || 0)); // q not guaranteed, keep order stable
+  const uniqList = uniq(list.map(o => o.s));
+  return uniqList.slice(0, limit);
 }
 
-/* ---- Bitkub ทุกคู่ THB ---- */
-async function bitkubTHB(){
-  const r = await fetchT("https://api.bitkub.com/api/market/symbols");
-  if (!r.ok) throw new Error("bitkub "+r.status);
+async function topOKX_USDT(limit) {
+  // OKX instruments endpoint
+  const r = await fetch("https://www.okx.com/api/v5/public/instruments?instType=SPOT");
+  if (!r.ok) throw new Error(`okx ${r.status}`);
+  const js = await r.json();
+  const all = (js?.data || [])
+    .map(x => String(x.instId || ""))      // e.g., "BTC-USDT"
+    .filter(s => s.endsWith("-USDT"));
+  // ไม่มี vol rank ตรง ๆ ใน endpoint นี้—ใช้การเรียงตามชื่อแล้วตัดจำนวน (ถ้าต้อง rank จริงค่อยเปลี่ยน endpoint 24h volume)
+  const arr = uniq(all.map(s => s.replace("-", "")));
+  return arr.slice(0, limit);
+}
+
+async function bitkub_THB_All() {
+  const r = await fetch("https://api.bitkub.com/api/market/symbols", UA());
+  if (!r.ok) throw new Error(`bitkub ${r.status}`);
   const js = await r.json();
   const out = [];
-  for (const it of js?.result||[]){
-    const raw = String(it.symbol||""); // THB_BTC
-    const [fiat,coin] = raw.split("_");
-    if (fiat==="THB" && coin) out.push(`${coin}_THB`);
+  for (const it of js?.result || []) {
+    const raw = String(it.symbol || ""); // "THB_BTC"
+    const [fiat, coin] = raw.split("_");
+    if (fiat === "THB" && coin) out.push(`${coin}_THB`);
   }
   return uniq(out).sort();
 }
 
-/* ---- OKX/Binance USDT (by quote volume) ---- */
-async function okxTopUSDT(topN){
-  const r = await fetchT("https://www.okx.com/api/v5/market/tickers?instType=SPOT");
-  if (!r.ok) throw new Error("okx "+r.status);
-  const js = await r.json();
-  const rows = (js?.data||[])
-    .filter(x => String(x.instId).endsWith("-USDT"))
-    .map(x => ({ sym: String(x.instId||"").replace("-","").toUpperCase(), vol: Number(x.volCcy||0) }))
-    .sort((a,b)=>b.vol-a.vol)
-    .slice(0, topN)
-    .map(x => x.sym);
-  if (rows.length < Math.min(150, topN)) throw new Error("okx insufficient");
-  return rows;
-}
-async function binanceTopUSDT(topN){
-  const r = await fetchT("https://api.binance.com/api/v3/ticker/24hr");
-  if (!r.ok) throw new Error("binance "+r.status);
-  const js = await r.json();
-  const rows = js
-    .filter(x => String(x.symbol).endsWith("USDT"))
-    .map(x => ({ sym: x.symbol.toUpperCase(), vol: Number(x.quoteVolume||0) }))
-    .sort((a,b)=>b.vol-a.vol)
-    .slice(0, topN)
-    .map(x => x.sym);
-  if (rows.length < Math.min(150, topN)) throw new Error("binance insufficient");
-  return rows;
+async function fetchSET_fromWikipedia(n) {
+  const page = n === 50 ? "SET50_Index" : "SET100_Index";
+  const url = `https://en.wikipedia.org/wiki/${page}`;
+  const html = await (await fetch(url, UA())).text();
+  const set = new Set();
+  const re = />([A-Z0-9]{2,6})<\/a><\/td>/g;
+  let m;
+  while ((m = re.exec(html))) set.add(m[1].toUpperCase());
+  const arr = Array.from(set).filter(x => /^[A-Z]{2,6}$/.test(x)).slice(0, n);
+  return arr;
 }
 
-/* ---- OKX Alt top100 (ตัด BTC/ETH + stable ออก) ---- */
-async function okxAltTop100(){
-  const full = await okxTopUSDT(250);
-  const STABLE = new Set(["USDT","USDC","DAI","BUSD","FDUSD","TUSD","UST","EURS","EURT"]);
-  const alts = full.filter(sym=>{
-    if (sym==="BTCUSDT" || sym==="ETHUSDT") return false;
-    const base = sym.replace(/USDT$/,"");
-    return !STABLE.has(base);
-  });
-  return alts.slice(0,100);
-}
-
-/* ---- Curated ETFs (รวมรายการที่ขอเพิ่ม) ---- */
-function curatedETFs(){
+// curated ETFs (ย่อไว้ให้สำคัญก่อน; เพิ่มได้ตามต้องการ)
+function curatedETFs() {
   return [
-    "JEPQ","SCHD","QQQ","SPY","VOO","O","IVV","MSTY",
-    "DIA","IWM","EEM","GLD","XLK","XLF","XLE","XLV","ARKK","TLT","HYG","SMH",
-    "XLY","XLP","XLC","XLB","XLI","IYR","VNQ","VTV","VUG","VTI","VO","VB",
-    "VEA","VWO","BND","AGG","LQD","IAU","SLV","URA","XOP","XME","KRE","KBE",
-    "SOXX","EFA","EWJ","EWT"
+    "SPY","VOO","IVV","QQQ","DIA","IWM","EEM","ARKK",
+    "XLK","XLF","XLE","XLY","XLP","XLV","XLI","XLU","VNQ",
+    "VTI","SCHD","JEPQ","MSTY","O"
   ];
 }
 
-/* ============================ GitHub I/O ============================ */
-async function ghReadJSON(path, repo, branch) {
-  const base = process.env.NEXT_PUBLIC_API_BASE || "";
-  const qs = new URLSearchParams({ op: "read", path, repo: repo||"", branch: branch||"" }).toString();
-  const url = `${base}/api/github?${qs}`;
-  const r = await fetchT(url);
-  if (!r.ok) throw new Error(`ghRead ${r.status} ${await r.text()}`);
-  return r.json();
-}
-async function ghWrite(path, repo, branch, content, message) {
-  const base = process.env.NEXT_PUBLIC_API_BASE || "";
-  const qs = new URLSearchParams({ op: "write", path, repo: repo||"", branch: branch||"" }).toString();
-  const url = `${base}/api/github?${qs}`;
-  const r = await fetchT(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, message })
-  });
-  if (!r.ok) throw new Error(`ghWrite ${r.status} ${await r.text()}`);
-  return r.json();
-}
-async function mergeAndWriteSignals(payload) {
-  const repo   = process.env.GH_REPO || process.env.GH_REPO_SYMBOLS;
-  const branch = process.env.GH_BRANCH || "main";
-  const path   = process.env.GH_PATH_SIGNALS || "data/signals.json";
-
-  let prev = {};
-  try { prev = await ghReadJSON(path, repo, branch); } catch {}
-
-  const map = new Map();
-  if (prev?.group === payload.group && Array.isArray(prev?.results)) {
-    for (const r of prev.results) map.set(r.ticker, r);
+// fallback สำรองขั้นต่ำ (กันกรณีถูก CORS/บล็อก)
+function fallback(group) {
+  switch (group) {
+    case "sp500":
+      return ["AAPL","MSFT","NVDA","GOOGL","AMZN","META","AVGO","BRK-B","XOM","LLY"]; // short fallback
+    case "nasdaq100":
+      return ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","ADBE","NFLX","PEP"];
+    case "altcoins":
+      return ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","DOGEUSDT","MATICUSDT","DOTUSDT","LINKUSDT"];
+    case "binance_top200":
+    case "okx_top200":
+      return ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","DOGEUSDT","MATICUSDT","DOTUSDT","LINKUSDT"];
+    case "bitkub":
+      return ["BTC_THB","ETH_THB","XRP_THB","ADA_THB","DOGE_THB","SOL_THB","BNB_THB","USDT_THB","SAND_THB","MANA_THB"];
+    case "set50":
+      return ["ADVANC","AOT","BDMS","BBL","PTT","PTTEP","CPALL","KBANK","KTB","SCB"];
+    case "set100":
+      return ["ADVANC","AOT","BDMS","BBL","PTT","PTTEP","CPALL","KBANK","KTB","SCB","AAV","BCH","BEM","BH","BJC","BTS","CRC","DTAC","EGCO","GLOBAL"];
+    case "etfs":
+      return curatedETFs();
+    case "gold":
+      return ["GC=F","XAUUSD=X"];
+    default:
+      return [];
   }
-  for (const r of payload.results) map.set(r.ticker, r);
+}
 
-  const merged = { group: payload.group, updatedAt: payload.updatedAt, results: Array.from(map.values()) };
-  await ghWrite(path, repo, branch, JSON.stringify(merged, null, 2), `update data/signals.json (${payload.group})`);
+// -------------- Merge memory ----------------
+function mergeToMemory(group, batchResults) {
+  const prev = MEM_CACHE.scans[group]?.results || [];
+  const map = new Map(prev.map(r => [r.ticker, r]));
+  for (const r of batchResults) map.set(r.ticker, r);
+  const merged = {
+    group,
+    updatedAt: new Date().toISOString(),
+    results: Array.from(map.values())
+  };
+  MEM_CACHE.scans[group] = merged;
   return merged;
 }
 
-/* ================================ Utils =============================== */
-function isTrue(v){ return ["1","true","yes","on"].includes(String(v||"").toLowerCase()); }
-function clampInt(v,min,max,def){ const n=parseInt(v??"",10); return Number.isFinite(n)?Math.max(min,Math.min(max,n)):def; }
-function uniq(arr){ return Array.from(new Set((arr||[]).map(s=>String(s||"").trim()).filter(Boolean))); }
-async function fetchT(url, init={}){
-  const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), TIMEOUT_MS);
-  try {
-    const r = await fetch(url, {
-      ...init, signal: ctrl.signal,
-      headers: { "User-Agent":"signal-dashboard/1.0", ...(init.headers||{}) }
-    });
-    return r;
-  } finally { clearTimeout(t); }
-}
-async function pickFirst(providers, need){
-  for (const fn of providers){
-    try {
-      const a = await fn();
-      if (a?.length >= need) return a.slice(0,need);
-    } catch(e){ console.warn("provider failed:", fn.name, e?.message||e); }
-  }
-  return [];
-}
+// -------------- Utils ----------------
+const UA = () => ({ headers: { "User-Agent": "signal-dashboard/1.0" } });
+const json = (res, code, obj) => { res.statusCode = code; res.setHeader("Content-Type","application/json"); res.end(JSON.stringify(obj)); };
+const clampInt = (v, min, max, def) => {
+  const n = parseInt(v ?? "", 10);
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : def;
+};
+const uniq = arr => Array.from(new Set((arr||[]).map(s => String(s||"").trim()).filter(Boolean)));
