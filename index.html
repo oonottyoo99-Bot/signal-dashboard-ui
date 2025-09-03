@@ -1,270 +1,241 @@
 <!doctype html>
 <html lang="th">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Signal Scanner Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<style>
-  :root{
-    --bg:#0b1220; --panel:#0f172a; --muted:#1e293b; --text:#e2e8f0;
-    --chip:#0b2836; --ok:#0fbf5f; --warn:#f6c038; --bad:#ef4444; --link:#38bdf8;
-  }
-  *{box-sizing:border-box;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";}
-  body{margin:0;background:var(--bg);color:var(--text)}
-  .wrap{max-width:1100px;margin:28px auto;padding:0 16px}
-  h1{font-size:28px;margin:0 0 18px}
-  .card{background:var(--panel);border-radius:12px;padding:16px;margin:14px 0;border:1px solid #0b2035}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .chip{padding:8px 12px;border-radius:999px;background:#0d1b2a;color:#dbeafe;border:1px solid #20334b;cursor:pointer}
-  .chip.active{outline:2px solid #2c7be5}
-  .badge{font-size:12px;opacity:.8;margin-left:8px}
-  .dot{width:8px;height:8px;border-radius:999px;display:inline-block;margin-right:6px}
-  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
-  .btn{background:#0b2035;color:#e2e8f0;border:1px solid #1f3a58;border-radius:10px;padding:8px 12px;cursor:pointer}
-  .btn:disabled{opacity:.5;cursor:not-allowed}
-  table{width:100%;border-collapse:collapse;margin-top:10px}
-  th,td{padding:12px 10px;border-bottom:1px solid #13243a;text-align:left}
-  th{position:sticky;top:0;background:#0f1829;z-index:1}
-  .pill{padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid #273c5b;display:inline-block}
-  .pill.sell{background:#2a1014;color:#ffd0d4;border-color:#4e1f29}
-  .pill.buy{background:#0d2617;color:#bff7d0;border-color:#1f5035}
-  .pill.muted{background:#0f2031;color:#9fb3c8;border-color:#24364b}
-  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
-  .pager{display:flex;gap:8px;align-items:center}
-  .pager input{width:64px;padding:6px 8px;background:#0b2035;border:1px solid #1f3a58;color:#e2e8f0;border-radius:8px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Signal Scanner Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#0f172a;color:#e2e8f0}
+    .wrap{max-width:1180px;margin:40px auto;padding:0 16px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .chip{background:#0b1220;border:1px solid #1f2937;border-radius:20px;padding:6px 12px;cursor:pointer}
+    .chip.active{background:#0e7490;border-color:#22d3ee}
+    .chip .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px}
+    .panel{background:#0b1220;border:1px solid #1f2937;border-radius:14px;padding:14px}
+    .btn{background:#1e3a8a;border:none;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
+    .btn[disabled]{opacity:.5;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border-bottom:1px solid #1f2937;padding:10px 8px;text-align:left}
+    th{color:#93c5fd}
+    .pill{border-radius:999px;padding:2px 10px;display:inline-block;font-size:12px}
+    .sell{background:#3f1e25;color:#fda4af;border:1px solid #7f1d1d}
+    .buy{background:#064e3b;color:#86efac;border:1px solid #065f46}
+    .muted{opacity:.65}
+    .badge{font-size:12px;color:#93c5fd}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    select,input{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:6px 8px}
+  </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Signal Scanner Dashboard</h1>
+<div class="wrap">
+  <h1 style="margin:0 0 16px">Signal Scanner Dashboard</h1>
 
-    <!-- AUTO status -->
-    <div class="card">
-      <div class="row" id="autoStatusRow">
-        <span class="chip"><span class="dot ok"></span>S&P 500</span>
-        <span class="chip"><span class="dot ok"></span>Nasdaq 100</span>
-        <span class="chip"><span class="dot ok"></span>Altcoins (OKX)</span>
-        <span class="chip"><span class="dot ok"></span>Binance Top 200</span>
-        <span class="chip"><span class="dot ok"></span>OKX Top 200</span>
-        <span class="chip"><span class="dot ok"></span>Bitkub</span>
-        <span class="chip"><span class="dot ok"></span>SET50</span>
-        <span class="chip"><span class="dot ok"></span>SET100</span>
-        <span class="chip"><span class="dot ok"></span>ETFs</span>
-      </div>
-      <div style="margin-top:8px;font-size:12px;opacity:.8">
-        สถานะอัปเดต: <span id="lastAutoTs">-</span>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" id="saveBtn" disabled>บันทึกการตั้งค่า*</button>
-        <span class="badge">* Auto-scan จะใส่คิวเป็น batch อัตโนมัติ</span>
-      </div>
-    </div>
+  <!-- กลุ่ม Auto chips -->
+  <div class="panel" style="margin-bottom:12px">
+    <div class="row" id="autoChips"></div>
+    <div class="badge" id="heartbeat" style="margin-top:8px">สถานะอัปเดต: -</div>
+    <div style="margin-top:10px"><button class="btn" id="btnSave">บันทึกการตั้งค่า*</button>
+      <span class="badge">* Auto-scan จะใส่คิวเป็น batch อัตโนมัติ</span></div>
+  </div>
 
-    <!-- MANUAL -->
-    <div class="card">
-      <div class="row" id="manualGroups">
-        <!-- เติมปุ่มด้วย JS -->
-      </div>
-      <div class="toolbar">
-        <div>
-          <span id="progressText">ยังไม่เริ่มสแกน</span>
-        </div>
-        <div>
-          <span id="scanState"><span class="dot ok"></span> สแกนเสร็จแล้ว</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- TABLE -->
-    <div class="card">
-      <div class="toolbar">
-        <div>
-          กลุ่มล่าสุด: <b id="currentGroup">-</b>
-          • อัปเดตเมื่อ: <span id="updatedAt">-</span>
-        </div>
-        <div class="pager">
-          แถว/หน้า:
-          <input type="number" id="pageSize" min="10" max="500" value="50"/>
-          <button class="btn" id="prevBtn">ก่อนหน้า</button>
-          <span id="pageInfo">หน้า 1/1</span>
-          <button class="btn" id="nextBtn">ถัดไป</button>
-          <button class="btn" id="refreshBtn">รีเฟรช</button>
-        </div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th style="width:22%">Ticker</th>
-            <th style="width:18%">Signal (1D)</th>
-            <th style="width:18%">Signal (1W)</th>
-            <th style="width:18%">Price</th>
-            <th style="width:10%">Timeframe</th>
-          </tr>
-        </thead>
-        <tbody id="tbody">
-          <tr><td colspan="5" style="opacity:.7">ไม่พบสัญญาณในรายการสแกนล่าสุด</td></tr>
-        </tbody>
-      </table>
+  <!-- Manual chips -->
+  <div class="panel" style="margin-bottom:14px">
+    <div class="row" id="manualChips"></div>
+    <div class="row" style="justify-content:space-between;margin-top:10px">
+      <div class="badge" id="scanNote">ยังไม่เริ่มสแกน</div>
+      <div class="badge" id="scanStatus"><span class="dot" style="background:#facc15"></span> กำลังสแกน…</div>
     </div>
   </div>
 
+  <!-- ตาราง -->
+  <div class="panel">
+    <div class="toolbar" style="justify-content:space-between">
+      <div class="row">
+        <div class="badge">กลุ่มล่าสุด: <span id="labelGroup">-</span></div>
+        <div class="badge">อัปเดตเมื่อ: <span id="labelTime">-</span></div>
+      </div>
+      <div class="row">
+        <label class="badge">แสดง/หน้า:
+          <select id="pageSize">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="all">ทั้งหมด</option>
+          </select>
+        </label>
+        <button class="btn" id="btnPrev">ก่อนหน้า</button>
+        <div class="badge">หน้า <span id="pageNow">1</span>/<span id="pageTotal">1</span></div>
+        <button class="btn" id="btnNext">ถัดไป</button>
+        <button class="btn" id="btnRefresh">รีเฟรช</button>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+      <tr>
+        <th>Ticker</th>
+        <th>Signal (1D)</th>
+        <th>Signal (1W)</th>
+        <th>Price</th>
+        <th>Timeframe</th>
+      </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
 <script>
-const API_BASE = ""; // เรียก relative /api/...
 const GROUPS = [
-  ["sp500","S&P 500"],
-  ["nasdaq100","Nasdaq 100"],
-  ["altcoins","Altcoins (OKX)"],
-  ["binance_top200","Binance Top 200"],
-  ["okx_top200","OKX Top 200"],
-  ["bitkub","Bitkub"],
-  ["set50","SET50"],
-  ["set100","SET100"],
-  ["etfs","ETFs"],
-  ["gold","ทองคำ"],
+  {key:"sp500", label:"S&P 500"},
+  {key:"nasdaq100", label:"Nasdaq 100"},
+  {key:"altcoins", label:"Altcoins (OKX)"},
+  {key:"binance_top200", label:"Binance Top 200"},
+  {key:"okx_top200", label:"OKX Top 200"},
+  {key:"bitkub", label:"Bitkub"},
+  {key:"set50", label:"SET50"},
+  {key:"set100", label:"SET100"},
+  {key:"etfs", label:"ETFs"},
+  {key:"gold", label:"ทองคำ"},
 ];
 
-const manualWrap = document.getElementById("manualGroups");
-GROUPS.forEach(([key,label])=>{
-  const b = document.createElement("button");
-  b.className = "chip";
-  b.textContent = label;
-  b.onclick = ()=> runFullScan(key, label);
-  manualWrap.appendChild(b);
-});
+let lastGroup = null;
+let results = [];        // ทั้งหมดของกลุ่ม
+let page = 1;
+let pageSize = 50;
 
-let tableState = { page:1, pageSize:50, data:[], group:"-", updatedAt:"-" };
-document.getElementById("pageSize").addEventListener("change", (e)=>{
-  tableState.pageSize = Math.max(10, parseInt(e.target.value||"50",10));
-  renderTable();
-});
-document.getElementById("prevBtn").onclick = ()=>{ tableState.page=Math.max(1, tableState.page-1); renderTable(); };
-document.getElementById("nextBtn").onclick = ()=>{ 
-  const max = Math.max(1, Math.ceil(tableState.data.length / tableState.pageSize));
-  tableState.page=Math.min(max, tableState.page+1); 
-  renderTable(); 
+const els = {
+  autoChips: document.getElementById('autoChips'),
+  manualChips: document.getElementById('manualChips'),
+  heartbeat: document.getElementById('heartbeat'),
+  scanNote: document.getElementById('scanNote'),
+  scanStatus: document.getElementById('scanStatus'),
+  labelGroup: document.getElementById('labelGroup'),
+  labelTime: document.getElementById('labelTime'),
+  pageSize: document.getElementById('pageSize'),
+  pageNow: document.getElementById('pageNow'),
+  pageTotal: document.getElementById('pageTotal'),
+  tbody: document.getElementById('tbody'),
+  btnPrev: document.getElementById('btnPrev'),
+  btnNext: document.getElementById('btnNext'),
+  btnRefresh: document.getElementById('btnRefresh'),
 };
-document.getElementById("refreshBtn").onclick = ()=> fetchAndRenderLast();
 
-function setProgress(msg, running=false){
-  document.getElementById("progressText").textContent = msg;
-  document.getElementById("scanState").innerHTML = running 
-    ? '<span class="dot warn"></span> กำลังสแกน...'
-    : '<span class="dot ok"></span> สแกนเสร็จแล้ว';
+function chip(label, key){
+  const d = document.createElement('div');
+  d.className = 'chip';
+  d.textContent = label;
+  d.onclick = ()=> manualScan(key);
+  return d;
 }
 
-async function runFullScan(group, label){
-  // ไฮไลต์ปุ่ม
-  [...manualWrap.querySelectorAll(".chip")].forEach(el=>el.classList.remove("active"));
-  event.currentTarget?.classList?.add("active");
+function renderChips(){
+  els.manualChips.innerHTML = "";
+  GROUPS.forEach(g => els.manualChips.appendChild(chip(g.label, g.key)));
+  els.autoChips.innerHTML = "";
+  GROUPS.forEach(g => {
+    const c = document.createElement('div');
+    c.className = 'chip';
+    c.innerHTML = `<span class="dot"></span>${g.label}`;
+    els.autoChips.appendChild(c);
+  });
+}
+renderChips();
 
-  tableState.group = label;
-  tableState.page = 1;
-  setProgress("เริ่มสแกน...", true);
+function setStatusNote(txt){ els.scanNote.textContent = txt; }
+function setStatusActive(active){
+  els.scanStatus.innerHTML = active
+    ? `<span class="dot" style="background:#facc15"></span> กำลังสแกน…`
+    : `<span class="dot" style="background:#10b981"></span> สแกนเสร็จแล้ว`;
+}
 
-  // กำหนด batch ตามกลุ่ม
-  let batchSize = 50;
-  if (group==="sp500") batchSize = 100;
-  if (group==="binance_top200" || group==="okx_top200") batchSize = 100;
-  if (group==="bitkub") batchSize = 100;
+async function manualScan(group){
+  lastGroup = group;
+  setStatusNote("เริ่มสแกน…");
+  setStatusActive(true);
+  results = [];
+  page = 1;
 
-  let cursor = 0, total = 0, processed = 0;
-  while (true){
-    const url = `${API_BASE}/api/run-scan?group=${encodeURIComponent(group)}&manual=1&cursor=${cursor}&batchSize=${batchSize}&live=1`;
+  // วิ่ง batch ต่อเองจนจบ
+  let nextCursor = 0, total = 0, done = 0;
+  do {
+    const url = `/api/run-scan?group=${encodeURIComponent(group)}&manual=1&cursor=${nextCursor}&batchSize=100`;
     const r = await fetch(url);
-    if (!r.ok){
-      setProgress(`สั่งสแกนล้มเหลว: HTTP ${r.status}`, false);
-      break;
-    }
+    if (!r.ok) { setStatusNote(`ผิดพลาด: ${await r.text()}`); setStatusActive(false); return; }
     const js = await r.json();
-    total = js.total || total;
-    processed += js.processed || 0;
-    cursor = (js.nextCursor==null) ? null : js.nextCursor;
-
-    const done = cursor==null;
-    setProgress(`สแกนแล้ว: ${Math.min(processed,total)}/${total} – กลุ่ม: ${group}`, !done);
-
-    // อัปเดตตารางด้วยผลสะสมล่าสุดที่ API คืน (savedPreview)
+    total = js.total || 0;
     const merged = js.savedPreview || {};
-    if (merged?.results) {
-      // จัด BUY มาก่อน (ถ้า 1D หรือ 1W เป็น Buy)
-      const data = [...merged.results].sort((a,b)=>{
-        const rank = v => v==="Buy" ? 2 : (v==="Sell" ? 1 : 0);
-        const ra = Math.max(rank(a.signalD), rank(a.signalW));
-        const rb = Math.max(rank(b.signalD), rank(b.signalW));
-        if (rb!==ra) return rb-ra;
-        return a.ticker.localeCompare(b.ticker);
-      });
-      tableState.data = data;
-      tableState.updatedAt = merged.updatedAt || "-";
-      tableState.group = label;
-      renderTable();
-    }
-    if (done) break;
-    // เว้นจังหวะเล็กน้อยกัน provider throttle
-    await sleep(200);
-  }
+    results = Array.isArray(merged.results) ? merged.results : [];
+    nextCursor = js.nextCursor;
+
+    setStatusNote(`สแกนแล้ว: ${results.length}/${total} – กลุ่ม: ${group}`);
+    renderTable();   // อัปเดตตาราง “ระหว่างทาง” ด้วย
+  } while (nextCursor !== null);
+
+  setStatusActive(false);
 }
 
-function pill(text, tone){
-  const cls = tone==="buy" ? "pill buy" : tone==="sell" ? "pill sell" : "pill muted";
-  return `<span class="${cls}">${text}</span>`;
+function sortResults(arr){
+  // BUY ก่อนเสมอ (ถ้า 1D หรือ 1W เป็น Buy) แล้วค่อย A→Z
+  return [...arr].sort((a,b)=>{
+    const aBuy = (a.signalD==="Buy" || a.signalW==="Buy") ? 1 : 0;
+    const bBuy = (b.signalD==="Buy" || b.signalW==="Buy") ? 1 : 0;
+    if (aBuy !== bBuy) return bBuy - aBuy;
+    return String(a.ticker).localeCompare(String(b.ticker));
+  });
+}
+
+function computePages(){
+  const n = results.length || 0;
+  if (els.pageSize.value === "all"){ pageSize = n || 1; }
+  else pageSize = parseInt(els.pageSize.value, 10);
+  const totalPages = Math.max(1, Math.ceil(n / pageSize));
+  if (page > totalPages) page = totalPages;
+  els.pageNow.textContent = page;
+  els.pageTotal.textContent = totalPages;
+  return { n, totalPages };
 }
 
 function renderTable(){
-  document.getElementById("currentGroup").textContent = tableState.group || "-";
-  document.getElementById("updatedAt").textContent = tableState.updatedAt || "-";
+  els.labelGroup.textContent = lastGroup ? lastGroup.toUpperCase() : "-";
+  els.labelTime.textContent = new Date().toISOString().replace("T"," ").replace("Z","Z");
 
-  const tb = document.getElementById("tbody");
-  tb.innerHTML = "";
+  const sorted = sortResults(results);
+  const { n, totalPages } = computePages();
+  const start = (page-1)*pageSize;
+  const end = Math.min(start + pageSize, n);
+  const view = sorted.slice(start, end);
 
-  const n = tableState.data.length;
-  if (!n){
-    tb.innerHTML = `<tr><td colspan="5" style="opacity:.7">ไม่พบสัญญาณในรายการสแกนล่าสุด</td></tr>`;
-    document.getElementById("pageInfo").textContent = "หน้า 1/1";
-    return;
-  }
-
-  const max = Math.max(1, Math.ceil(n / tableState.pageSize));
-  tableState.page = Math.min(tableState.page, max);
-  const start = (tableState.page-1)*tableState.pageSize;
-  const end = Math.min(start + tableState.pageSize, n);
-  const rows = tableState.data.slice(start, end);
-
-  for (const r of rows){
-    const dTone = r.signalD==="Buy" ? "buy" : r.signalD==="Sell" ? "sell" : "muted";
-    const wTone = r.signalW==="Buy" ? "buy" : r.signalW==="Sell" ? "sell" : "muted";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
+  els.tbody.innerHTML = view.map(r=>{
+    const s1 = r.signalD==="Buy" ? "buy pill" : (r.signalD==="Sell" ? "sell pill" : "pill muted");
+    const s2 = r.signalW==="Buy" ? "buy pill" : (r.signalW==="Sell" ? "sell pill" : "pill muted");
+    return `<tr>
       <td>${r.ticker}</td>
-      <td>${pill(r.signalD || "-", dTone)}</td>
-      <td>${pill(r.signalW || "-", wTone)}</td>
-      <td>${r.price==null ? "-" : r.price}</td>
-      <td><span class="pill muted">${r.timeframe || "1D"}</span></td>
-    `;
-    tb.appendChild(tr);
-  }
-  document.getElementById("pageInfo").textContent = `หน้า ${tableState.page}/${max}`;
+      <td><span class="${s1}">${r.signalD||"-"}</span></td>
+      <td><span class="${s2}">${r.signalW||"-"}</span></td>
+      <td>${r.price==null?'-':r.price}</td>
+      <td><span class="pill muted">1D</span></td>
+    </tr>`;
+  }).join("");
+
+  els.btnPrev.disabled = (page<=1);
+  els.btnNext.disabled = (page>=totalPages);
 }
 
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-fetchAndRenderLast();
-async function fetchAndRenderLast(){
-  // อ่านไฟล์ signals.json ล่าสุดมาโชว์ (ถ้ามี)
-  try{
-    const qs = new URLSearchParams({ op:"read", path:"data/signals.json", repo:(window.NEXT_PUBLIC_REPO||""), branch:"main" });
-    const r = await fetch(`${API_BASE}/api/github?${qs}`);
-    if (!r.ok) return;
-    const js = await r.json();
-    if (js?.results){
-      tableState.data = js.results;
-      tableState.updatedAt = js.updatedAt || "-";
-      renderTable();
-    }
-  }catch{}
-}
+// control
+els.pageSize.onchange = ()=>{ page=1; renderTable(); };
+els.btnPrev.onclick = ()=>{ if (page>1){ page--; renderTable(); } };
+els.btnNext.onclick = ()=>{ page++; renderTable(); };
+els.btnRefresh.onclick = ()=> renderTable();
+
+// heartbeat ui
+setInterval(()=>{
+  els.heartbeat.textContent = "สถานะอัปเดต: " + new Date().toISOString();
+}, 1000);
+
+// เริ่มต้นให้กดสแกนกลุ่มไหนก่อนก็ได้
+setStatusActive(false);
 </script>
 </body>
 </html>
