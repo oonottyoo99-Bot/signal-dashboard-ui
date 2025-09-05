@@ -1,5 +1,10 @@
 // api/run-scan.js
-// v2 — Self-contained batch scanner with on-the-fly indicators (EMA/RSI/MACD) for 1D & 1W
+// v3 – full auto-batch scan + live symbols + TA (EMA/RSI/MACD) 1D & 1W + price(2d)
+
+const BATCH_SIZE = 40;          // ประมวลผลต่อรอบ
+const MAX_CONCURRENCY = 5;      // ยิง API พร้อมกันสูงสุด/รอบ
+const MAX_ROUNDS = 999;         // กันลูป
+const UA_HEADERS = { "User-Agent": "signal-dashboard/3.0" };
 
 export default async function handler(req, res) {
   try {
@@ -7,244 +12,159 @@ export default async function handler(req, res) {
     const group = (url.searchParams.get("group") || "").toLowerCase();
     if (!group) return res.status(400).json({ error: "missing ?group" });
 
-    const isManual  = ["1","true","yes"].includes((url.searchParams.get("manual")||"").toLowerCase());
-    const batchSize = clampInt(url.searchParams.get("batchSize"), 1, 250, 25);
-    const cursor    = clampInt(url.searchParams.get("cursor"), 0, 1e9, 0);
-
-    // 1) Load live symbols (fallback -> data/symbols.json)
+    // 1) โหลดรายชื่อสด (เชื่อถือได้ + ครบ)
     const allSymbols = await getSymbolsForGroupLiveOrFallback(group);
     if (!allSymbols.length) return res.status(400).json({ error: `no symbols for ${group}` });
 
-    // 2) Cut batch
-    const start = isManual ? cursor : 0;
-    const end   = Math.min(start + batchSize, allSymbols.length);
-    const batch = allSymbols.slice(start, end);
+    // 2) Auto-batch จนจบเอง (จะเขียน signals.json ทุก batch)
+    let cursor = 0, round = 0, total = allSymbols.length, savedCount = 0;
+    while (cursor < total && round < MAX_ROUNDS) {
+      const slice = allSymbols.slice(cursor, Math.min(cursor + BATCH_SIZE, total));
+      const scanned = await scanSymbols(slice, group);
+      const mergedPayload = await mergeAndWriteSignals({
+        group,
+        updatedAt: new Date().toISOString(),
+        results: scanned
+      });
+      cursor += slice.length;
+      savedCount += scanned.length;
+      round++;
 
-    // 3) Scan with indicators (1D, 1W)
-    const scanned = await scanSymbols(group, batch);
+      // ส่ง progress กลับครั้งเดียว (ให้ UI รู้ว่าไปต่อแล้ว)
+      // หมายเหตุ: handler serverless ส่งทีเดียวตอนจบอยู่ดี – เลยสรุปผลครั้งเดียว
+      if (cursor >= total) {
+        return res.status(200).json({
+          ok: true,
+          version: "v3",
+          group,
+          total,
+          processed: savedCount,
+          batchSize: BATCH_SIZE,
+          rounds: round,
+          savedCount,
+          savedPreview: mergedPayload
+        });
+      }
+    }
 
-    // 4) Merge with previous and write back
-    const mergedPayload = await mergeAndWriteSignals({
-      group,
-      updatedAt: new Date().toISOString(),
-      results: scanned
-    });
-
-    const nextCursor = end < allSymbols.length ? end : null;
-
+    // safety
     return res.status(200).json({
-      ok: true,
-      version: "r2-selfcalc",
-      group,
-      total: allSymbols.length,
-      processed: scanned.length,
-      start,
-      end: end - 1,
-      nextCursor,
-      batchSize,
-      savedCount: mergedPayload.results.length,
-      savedPreview: mergedPayload
+      ok: true, version: "v3", group,
+      note: "ended by MAX_ROUNDS", processed: savedCount, total
     });
+
   } catch (err) {
     console.error("run-scan error:", err);
     return res.status(500).json({ error: "scan failed", detail: String(err) });
   }
 }
 
-/* ================================ INDICATORS ================================ */
-
-function ema(values, period) {
-  const k = 2 / (period + 1);
-  let emaPrev = null;
+/* =============================== SCANNER =============================== */
+// ดึงแท่งเทียน (both 1D & 1W) → คำนวณอินดิเคเตอร์ → ส่งสัญญาณ + ราคา(ล่าสุด 2dec)
+async function scanSymbols(tickers, group) {
+  // ทำเป็น queue จำกัด concurrency
   const out = [];
-  for (let i = 0; i < values.length; i++) {
-    const v = Number(values[i]);
-    if (!Number.isFinite(v)) { out.push(null); continue; }
-    if (emaPrev == null) emaPrev = v; else emaPrev = v * k + emaPrev * (1 - k);
+  let i = 0;
+  async function worker() {
+    while (i < tickers.length) {
+      const idx = i++;
+      const t = tickers[idx];
+      try {
+        const { ohlcD, ohlcW, lastPrice } = await fetchCandlesAll(group, t);
+        const signalD = computeSignal(ohlcD);
+        const signalW = computeSignal(ohlcW, true);
+        out.push({
+          ticker: t,
+          signalD,
+          signalW,
+          price: lastPrice == null ? null : round2(lastPrice),
+          timeframe: "1D"
+        });
+      } catch (e) {
+        // ถ้าพลาดก็ใส่ "-" ไว้ก่อน แต่อย่างน้อยขึ้นแถว
+        out.push({ ticker: t, signalD: "-", signalW: "-", price: null, timeframe: "1D" });
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, tickers.length) }, () => worker());
+  await Promise.all(workers);
+  // เรียงชื่อเพื่อให้ deterministic
+  out.sort((a,b)=> a.ticker.localeCompare(b.ticker));
+  return out;
+}
+
+/* ============================ TA CALCULATION =========================== */
+// เหมือน Pine ของคุณ (EMA 9/21, RSI 14, MACD 12/26/9) ให้ผล Buy/Sell/-
+function computeSignal(ohlc, isWeekly=false) {
+  try {
+    if (!Array.isArray(ohlc) || ohlc.length < 60) return "-";
+    // ราคาปิด
+    const close = ohlc.map(x => x.c);
+    // EMA
+    const ema9  = ema(close, 9);
+    const ema21 = ema(close, 21);
+    // RSI 14
+    const rsi14 = rsi(close, 14);
+    // MACD 12/26/9
+    const { macd, signal } = macdCalc(close, 12, 26, 9);
+
+    const L = close.length - 1;
+    if (L < 2) return "-";
+
+    const crossUp   = ema9[L] > ema21[L] && ema9[L-1] <= ema21[L-1];
+    const crossDown = ema9[L] < ema21[L] && ema9[L-1] >= ema21[L-1];
+
+    const buy  = crossUp   && macd[L] > signal[L] && rsi14[L] < 70;
+    const sell = crossDown || macd[L] < signal[L] || rsi14[L] > 80;
+
+    if (buy && !sell)  return "Buy";
+    if (sell && !buy)  return "Sell";
+    return "-";
+  } catch {
+    return "-";
+  }
+}
+
+// EMA
+function ema(arr, period) {
+  const k = 2/(period+1);
+  let emaPrev = arr[0];
+  const out = [emaPrev];
+  for (let i=1;i<arr.length;i++){
+    emaPrev = arr[i]*k + emaPrev*(1-k);
     out.push(emaPrev);
   }
   return out;
 }
-function rsi(values, period = 14) {
-  const out = new Array(values.length).fill(null);
-  let gains = 0, losses = 0;
-  for (let i = 1; i < values.length; i++) {
-    const change = values[i] - values[i - 1];
-    if (i <= period) {
-      if (change > 0) gains += change; else losses -= change;
-      if (i === period) {
-        const avgGain = gains / period;
-        const avgLoss = losses / period;
-        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-        out[i] = 100 - (100 / (1 + rs));
-      }
-      continue;
-    }
-    // Wilder
-    const prevRSI = out[i - 1];
-    const gain = Math.max(change, 0);
-    const loss = Math.max(-change, 0);
-    gains = (gains * (period - 1) + gain) / period;
-    losses = (losses * (period - 1) + loss) / period;
-    const rs = losses === 0 ? 100 : gains / losses;
-    out[i] = 100 - (100 / (1 + rs));
+// RSI 14
+function rsi(arr, period=14) {
+  let gains=0, losses=0;
+  for (let i=1;i<=period;i++){
+    const ch = arr[i]-arr[i-1];
+    if (ch>=0) gains+=ch; else losses-=ch;
+  }
+  let avgGain=gains/period, avgLoss=losses/period;
+  const out = Array(arr.length).fill(50);
+  out[period]= avgLoss===0?100: 100 - (100/(1+avgGain/avgLoss));
+  for (let i=period+1;i<arr.length;i++){
+    const ch=arr[i]-arr[i-1];
+    const g= ch>0?ch:0, l= ch<0?-ch:0;
+    avgGain=(avgGain*(period-1)+g)/period;
+    avgLoss=(avgLoss*(period-1)+l)/period;
+    out[i]= avgLoss===0?100: 100 - (100/(1+avgGain/avgLoss));
   }
   return out;
 }
-function macd(values, fast = 12, slow = 26, signal = 9) {
-  const emaFast = ema(values, fast);
-  const emaSlow = ema(values, slow);
-  const macdLine = values.map((_, i) =>
-    (emaFast[i] != null && emaSlow[i] != null) ? (emaFast[i] - emaSlow[i]) : null
-  );
-  const signalLine = ema(macdLine.map(v => v == null ? 0 : v), signal);
-  const hist = macdLine.map((v, i) => (v == null || signalLine[i] == null) ? null : v - signalLine[i]);
-  return { macdLine, signalLine, hist };
+// MACD
+function macdCalc(arr, fast=12, slow=26, sig=9) {
+  const emaF = ema(arr, fast);
+  const emaS = ema(arr, slow);
+  const macd = arr.map((_,i)=>(emaF[i]-emaS[i]));
+  const signal = ema(macd, sig);
+  return { macd, signal };
 }
 
-function makeSignalFromPineLogic(closes) {
-  // replicate your Pine filter combining EMA crossover + MACD relation + RSI bounds
-  const emaFast = ema(closes, 9);
-  const emaSlow = ema(closes, 21);
-  const rsiArr   = rsi(closes, 14);
-  const { macdLine, signalLine } = macd(closes, 12, 26, 9);
-
-  const n = closes.length - 1;
-  if (n < 2) return "-";
-
-  const crossUp  = emaFast[n-1] <= emaSlow[n-1] && emaFast[n] > emaSlow[n];
-  const crossDn  = emaFast[n-1] >= emaSlow[n-1] && emaFast[n] < emaSlow[n];
-  const macdUp   = macdLine[n] != null && signalLine[n] != null && macdLine[n] > signalLine[n];
-  const macdDn   = macdLine[n] != null && signalLine[n] != null && macdLine[n] < signalLine[n];
-  const rsiNow   = rsiArr[n];
-
-  const buy = crossUp && macdUp && rsiNow != null && rsiNow < 70;
-  const sell = crossDn || macdDn || (rsiNow != null && rsiNow > 80);
-  if (buy) return "Buy";
-  if (sell) return "Sell";
-  return "-";
-}
-
-/* ============================ PRICE FETCHERS ============================ */
-// Yahoo Finance (equities/ETFs/SET via suffix .BK)
-async function yahooCloses(symbol, interval = "1d", range = "2y") {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`Yahoo ${symbol} ${r.status}`);
-  const js = await r.json();
-  const res = js?.chart?.result?.[0];
-  const closes = res?.indicators?.quote?.[0]?.close || [];
-  return closes.filter(v => Number.isFinite(v));
-}
-
-// Binance USDT spot
-async function binanceCloses(symbol, interval = "1d", limit = 400) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`Binance ${symbol} ${r.status}`);
-  const js = await r.json();
-  return js.map(k => Number(k[4])).filter(Number.isFinite); // close
-}
-
-// OKX: instId like "BTC-USDT"
-async function okxCloses(instId, bar = "1D", limit = 400) {
-  const url = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=${limit}`;
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`OKX ${instId} ${r.status}`);
-  const js = await r.json();
-  const data = js?.data || [];
-  return data.reverse().map(k => Number(k[4])).filter(Number.isFinite); // close
-}
-
-// Bitkub TradingView endpoint (THB_xxx)
-async function bitkubCloses(tvSymbol, resolution = "1D", limit = 400) {
-  // tvSymbol form: "THB_BTC"
-  const url = `https://api.bitkub.com/tradingview/history?symbol=${tvSymbol}&resolution=${resolution}&from=${Math.floor(Date.now()/1000)-400*86400}&to=${Math.floor(Date.now()/1000)}`;
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`Bitkub ${tvSymbol} ${r.status}`);
-  const js = await r.json();
-  return (js?.c || []).filter(Number.isFinite);
-}
-
-/* ============================== SCANNER ============================== */
-
-async function scanSymbols(group, symbols) {
-  const out = [];
-  for (const ticker of symbols) {
-    try {
-      const sig = await computeForTicker(group, ticker);
-      out.push(sig);
-    } catch (e) {
-      console.warn(`[scan] ${group}:${ticker} failed:`, e?.message || e);
-      out.push({
-        ticker, signalD: "-", signalW: "-", price: null, timeframe: "1D"
-      });
-    }
-  }
-  return out;
-}
-
-async function computeForTicker(group, ticker) {
-  // Map to price source + symbol formatting
-  let closesD = [];
-  let closesW = [];
-  let price = null;
-
-  if (group === "sp500" || group === "nasdaq100" || group === "etfs" || group === "set50" || group === "set100") {
-    const yahooSymbol =
-      (group === "set50" || group === "set100")
-        ? `${ticker}.BK`
-        : ticker;
-    closesD = await yahooCloses(yahooSymbol, "1d", "2y");
-    closesW = await yahooCloses(yahooSymbol, "1wk", "5y");
-    price   = closesD.length ? closesD.at(-1) : null;
-  }
-  else if (group === "binance_top200" || group === "altcoins") {
-    // All in USDT form e.g., BTCUSDT
-    const sym = ticker.replace(/[^A-Z0-9]/g,"");
-    closesD = await binanceCloses(sym, "1d", 500);
-    closesW = await binanceCloses(sym, "1w", 500);
-    price   = closesD.length ? closesD.at(-1) : null;
-  }
-  else if (group === "okx_top200") {
-    // OKX format: BTC-USDT
-    const inst = ticker.includes("-") ? ticker : `${ticker.replace(/USDT$/,"")}-USDT`;
-    closesD = await okxCloses(inst, "1D", 500);
-    closesW = await okxCloses(inst, "1W", 500);
-    price   = closesD.length ? closesD.at(-1) : null;
-  }
-  else if (group === "bitkub") {
-    // Our ticker is like "BTC_THB" => TV uses "THB_BTC"
-    const [coin, fiat] = ticker.split("_"); // BTC_THB
-    const tv = `${fiat}_${coin}`;           // THB_BTC
-    closesD = await bitkubCloses(tv, "1D", 500);
-    closesW = await bitkubCloses(tv, "1W", 500);
-    price   = closesD.length ? closesD.at(-1) : null;
-  }
-  else if (group === "gold") {
-    // Two symbols: "GC=F", "XAUUSD=X" from Yahoo
-    closesD = await yahooCloses(ticker, "1d", "2y");
-    closesW = await yahooCloses(ticker, "1wk", "5y");
-    price   = closesD.length ? closesD.at(-1) : null;
-  } else {
-    closesD = [];
-    closesW = [];
-  }
-
-  const signalD = closesD.length ? makeSignalFromPineLogic(closesD) : "-";
-  const signalW = closesW.length ? makeSignalFromPineLogic(closesW) : "-";
-
-  return {
-    ticker,
-    signalD,
-    signalW,
-    price: price ?? null,
-    timeframe: "1D"
-  };
-}
-
-/* ============================ LIVE SYMBOLS ============================ */
-
+/* ============================ LIVE SYMBOLS ============================= */
 async function getSymbolsForGroupLiveOrFallback(group) {
   try {
     const live = await getSymbolsLive(group);
@@ -252,7 +172,7 @@ async function getSymbolsForGroupLiveOrFallback(group) {
   } catch (e) {
     console.warn(`[symbols-live] ${group} failed:`, e?.message || e);
   }
-  // fallback → data/symbols.json
+  // fallback → data/symbols.json (ถ้ามี)
   try {
     const json = await ghReadJSON(
       process.env.GH_PATH_SYMBOLS || "data/symbols.json",
@@ -260,134 +180,210 @@ async function getSymbolsForGroupLiveOrFallback(group) {
       process.env.GH_BRANCH || "main"
     );
     return uniq(Array.isArray(json?.[group]) ? json[group] : []);
-  } catch (e2) {
-    console.warn(`[symbols-fallback] ${group} failed:`, e2?.message || e2);
+  } catch {
     return [];
   }
 }
 
 async function getSymbolsLive(group) {
   switch (group) {
-    case "sp500":
-      return await fetchSP500Slickcharts().catch(async () => await fetchSP500Datahub());
-    case "nasdaq100":
-      return await fetchNasdaq100Wikipedia();
-    case "bitkub":
-      return await fetchBitkubTHB();
-    case "set50":
-      return await fetchSETWikipedia("set50");
-    case "set100":
-      return await fetchSETWikipedia("set100");
-    case "okx_top200":
-      return await fetchOKXTopN(200);
-    case "binance_top200":
-      return await fetchBinanceTopN(200);
-    case "altcoins":
-      return await fetchOKXTopN(100); // Altcoins(OKX) Top 100
-    case "etfs":
-      return ["SPY","QQQ","VTI","DIA","ARKK","IWM","EEM","GLD","XLK","XLF","SCHD","IVV","VOO","O","MSTY","VNQ","EFA","XLE","XLY","XLP","XLV","IEMG"];
-    case "gold":
-      return ["GC=F","XAUUSD=X"];
-    default:
-      return [];
+    case "sp500":     return await fetchSP500Slickcharts();                    // 500
+    case "nasdaq100": return await fetchNasdaq100Wikipedia();                  // 100
+    case "altcoins":  return await fetchOKXTopN(100, true);                    // OKX top100 (ตัด stable/btc/eth)
+    case "binance_top200": return await fetchBinanceTopN(200);                 // Binance USDT top200
+    case "okx_top200":     return await fetchOKXTopN(200);                     // OKX USDT top200
+    case "bitkub":    return await fetchBitkubTHB();                           // ทุกคู่ THB_
+    case "set50":     return await fetchSETWikipedia("set50");                 // 50
+    case "set100":    return await fetchSETWikipedia("set100");                // 100
+    case "etfs":      return ["ARKK","DIA","EEM","IVV","IWM","JEPQ","MSTY","O","QQQ","SCHD","SPY","VNQ","GLD","SLV","XLE","XLK","XLF","XLV","XLY","IEMG","VTI","VOO"];
+    case "gold":      return ["GC=F","XAUUSD=X"];
+    default:          return [];
   }
 }
 
-// S&P500 (หลัก)
+// S&P500: slickcharts (ครบ 500)
 async function fetchSP500Slickcharts() {
   const url = "https://www.slickcharts.com/sp500";
-  const html = await (await fetch(url, UA())).text();
+  const html = await (await fetch(url, { headers: UA_HEADERS })).text();
+  // สัญลักษณ์อยู่คอลัมน์ Symbol ทั้ง 500 บรรทัด
   const re = /<td class="text-center">([A-Z.\-]{1,7})<\/td>/g;
   const out = new Set();
-  let m;
-  while ((m = re.exec(html))) out.add(m[1].toUpperCase().replace(/\./g,"-"));
+  let m; while((m=re.exec(html))) out.add(m[1].toUpperCase().replace(/\./g,"-"));
   const arr = Array.from(out);
   if (arr.length < 400) throw new Error("slickcharts parse too small");
-  return arr.slice(0, 500);
-}
-// S&P500 สำรอง
-async function fetchSP500Datahub() {
-  const url = "https://datahub.io/core/s-and-p-500-companies/r/constituents.json";
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`datahub ${r.status}`);
-  const js = await r.json();
-  return js.map(x => String(x.Symbol||"").toUpperCase().replace(/\./g,"-")).filter(Boolean);
+  return arr.slice(0,500);
 }
 
-// Nasdaq100
+// Nasdaq100: Wikipedia
 async function fetchNasdaq100Wikipedia() {
   const url = "https://en.wikipedia.org/wiki/Nasdaq-100";
-  const html = await (await fetch(url, UA())).text();
+  const html = await (await fetch(url, { headers: UA_HEADERS })).text();
   const set = new Set();
   const re = />\s*([A-Z.\-]{1,7})\s*<\/a>\s*<\/td>/g;
-  let m;
-  while ((m = re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
-  const arr = Array.from(set).filter(x => /^[A-Z\-]+$/.test(x));
+  let m; while((m=re.exec(html))) set.add(m[1].toUpperCase().replace(/\./g,"-"));
+  const arr = Array.from(set).filter(x=>/^[A-Z\-]+$/.test(x));
   if (arr.length < 80) throw new Error("nas100 parse small");
-  return arr.slice(0, 100);
+  return arr.slice(0,100);
 }
 
-// SET50/SET100
+// SET50/SET100: Wikipedia
 async function fetchSETWikipedia(which) {
   const page = which === "set50" ? "SET50_Index" : "SET100_Index";
   const url = `https://en.wikipedia.org/wiki/${page}`;
-  const html = await (await fetch(url, UA())).text();
+  const html = await (await fetch(url, { headers: UA_HEADERS })).text();
   const set = new Set();
   const re = />([A-Z0-9]{2,6})<\/a><\/td>/g;
-  let m;
-  while ((m = re.exec(html))) set.add(m[1].toUpperCase());
-  const arr = Array.from(set).filter(x => /^[A-Z]{2,6}$/.test(x));
-  if (which === "set50"  && arr.length < 40)  throw new Error("set50 parse small");
-  if (which === "set100" && arr.length < 80)  throw new Error("set100 parse small");
-  return arr.slice(0, which === "set50" ? 50 : 100);
+  let m; while((m=re.exec(html))) set.add(m[1].toUpperCase());
+  let arr = Array.from(set).filter(x => /^[A-Z]{2,6}$/.test(x));
+  if (which==="set50" && arr.length<40) throw new Error("set50 parse small");
+  if (which==="set100"&& arr.length<80) throw new Error("set100 parse small");
+  return arr.slice(0, which==="set50"?50:100).map(s=> `${s}.BK`);
 }
 
-// Bitkub — ทุกคู่ THB
+// Bitkub: ทุกคู่ THB_ → แปลงเป็น COIN_THB
 async function fetchBitkubTHB() {
   const url = "https://api.bitkub.com/api/market/symbols";
-  const r = await fetch(url, UA());
+  const r = await fetch(url, { headers: UA_HEADERS });
   if (!r.ok) throw new Error(`bitkub ${r.status}`);
   const js = await r.json();
-  const out = [];
-  for (const it of js?.result || []) {
-    const raw = String(it.symbol || ""); // "THB_BTC"
+  const out=[];
+  for (const it of js?.result||[]) {
+    const raw = String(it.symbol||""); // THB_BTC
     const [fiat, coin] = raw.split("_");
-    if (fiat === "THB" && coin) out.push(`${coin}_THB`); // BTC_THB
+    if (fiat==="THB" && coin) out.push(`${coin}_THB`);
   }
   return uniq(out).sort();
 }
 
-// Binance TopN by USDT quote volume (filter stablecoins)
-async function fetchBinanceTopN(N = 200) {
-  const url = "https://api.binance.com/api/v3/ticker/24hr";
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`binance tickers ${r.status}`);
-  const js = await r.json();
-  const rows = js
-    .filter(x => /USDT$/.test(x.symbol))
-    .filter(x => !/^USDC|^BUSD|^FDUSD|^TUSD/.test(x.symbol)) // ตัด stable หลักออก
-    .sort((a,b) => Number(b.quoteVolume) - Number(a.quoteVolume))
-    .slice(0, N)
-    .map(x => x.symbol.toUpperCase());
-  return uniq(rows);
-}
+// OKX / Binance ranking
+const STABLES = new Set(["USDT","USDC","DAI","TUSD","FDUSD","USDD","BUSD"]);
+const EXCLUDE = new Set(["BTC","ETH"]);
 
-// OKX TopN by 24h volume (USDT spot)
-async function fetchOKXTopN(N = 200) {
+async function fetchOKXTopN(n=200, altOnly=false){
+  // OKX tickers – เอาเฉพาะ SPOT USDT คู่
   const url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT";
-  const r = await fetch(url, UA());
-  if (!r.ok) throw new Error(`okx tickers ${r.status}`);
-  const js = await r.json();
-  const rows = (js?.data || [])
-    .filter(x => /-USDT$/.test(x.instId))
-    .sort((a,b) => Number(b.volCcy24h || 0) - Number(a.volCcy24h || 0))
-    .slice(0, N)
-    .map(x => x.instId.toUpperCase()); // "BTC-USDT"
-  return uniq(rows);
+  const js = await (await fetch(url, { headers: UA_HEADERS })).json();
+  let rows = (js?.data||[])
+    .filter(x => x.instId.endsWith("-USDT"))
+    .map(x => ({
+      sym: x.instId.replace("-",""),
+      base: x.instId.split("-")[0],
+      vol: Number(x.vol24h||0)
+    }));
+  if (altOnly) rows = rows.filter(r => !STABLES.has(r.base) && !EXCLUDE.has(r.base));
+  rows.sort((a,b)=> b.vol - a.vol);
+  return rows.slice(0,n).map(r=> r.sym);
+}
+async function fetchBinanceTopN(n=200){
+  // 24hr ticker – sort ด้วย quoteVolume – เอาเฉพาะ ...USDT
+  const url = "https://api.binance.com/api/v3/ticker/24hr";
+  const js = await (await fetch(url, { headers: UA_HEADERS })).json();
+  const rows = js
+    .filter(x => x.symbol.endsWith("USDT"))
+    .map(x => ({ sym: x.symbol, vol: Number(x.quoteVolume||0) }))
+    .sort((a,b)=> b.vol - a.vol)
+    .slice(0,n)
+    .map(r => r.sym);
+  return rows;
 }
 
-/* ================================ GitHub I/O =============================== */
+/* =============================== OHLC FETCH ============================ */
+// คืน { ohlcD:[{t,o,h,l,c}], ohlcW:[...], lastPrice:number|null }
+async function fetchCandlesAll(group, ticker) {
+  // route ตามประเภท
+  if (group==="bitkub") {
+    // Bitkub uses tradingview/history (unofficial) – 1D & 1W
+    const sym = `THB_${ticker.split("_")[0]}`; // COIN_THB -> THB_COIN
+    const [d, w] = await Promise.all([
+      fetchBitkubOHLC(sym, "1D"),
+      fetchBitkubOHLC(sym, "1W")
+    ]);
+    const last = d && d.length ? d[d.length-1].c : null;
+    return { ohlcD: d, ohlcW: w, lastPrice: last };
+  }
 
+  if (ticker.endsWith(".BK") || /^[A-Z.=]+$/.test(ticker)) {
+    // หุ้น/ETF → Yahoo Finance
+    const ysym = ticker; // SET เติม .BK แล้วด้านบน
+    const [d, w] = await Promise.all([
+      fetchYahoo(ysym, "1d"),
+      fetchYahoo(ysym, "1wk")
+    ]);
+    const last = d && d.length ? d[d.length-1].c : null;
+    return { ohlcD: d, ohlcW: w, lastPrice: last };
+  }
+
+  // คริปโต – ลอง Binance ก่อน ถ้าไม่เจอใช้ OKX
+  const [dB, wB] = await Promise.all([
+    fetchBinanceKlines(ticker, "1d").catch(()=>null),
+    fetchBinanceKlines(ticker, "1w").catch(()=>null)
+  ]);
+  if (dB && dB.length) {
+    const last = dB[dB.length-1].c;
+    return { ohlcD: dB, ohlcW: wB||[], lastPrice: last };
+  }
+  const okxId = ticker.replace(/USDT$/,"-USDT");
+  const [dO, wO] = await Promise.all([
+    fetchOKXCandles(okxId, "1D").catch(()=>null),
+    fetchOKXCandles(okxId, "1W").catch(()=>null)
+  ]);
+  const last = dO && dO.length ? dO[dO.length-1].c : null;
+  return { ohlcD: dO||[], ohlcW: wO||[], lastPrice: last };
+}
+
+// Bitkub tradingview
+async function fetchBitkubOHLC(symbol, tf) {
+  // tf: 1D / 1W -> resolution: "1D"|"1W"
+  const now = Math.floor(Date.now()/1000);
+  const from = now - 400*24*3600;
+  const url = `https://api.bitkub.com/tradingview/history?symbol=${symbol}&resolution=${tf}&from=${from}&to=${now}`;
+  const js = await (await fetch(url, { headers: UA_HEADERS })).json();
+  if (!js || js.s!=="ok") return [];
+  const out=[];
+  for (let i=0;i<js.t.length;i++){
+    out.push({ t: js.t[i]*1000, o:+js.o[i], h:+js.h[i], l:+js.l[i], c:+js.c[i] });
+  }
+  return out;
+}
+
+// Yahoo Finance
+async function fetchYahoo(symbol, interval="1d", range="2y") {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+  const js = await (await fetch(url, { headers: UA_HEADERS })).json();
+  const r = js?.chart?.result?.[0];
+  if (!r) return [];
+  const t = r.timestamp || [];
+  const o = r.indicators?.quote?.[0]?.open  || [];
+  const h = r.indicators?.quote?.[0]?.high  || [];
+  const l = r.indicators?.quote?.[0]?.low   || [];
+  const c = r.indicators?.quote?.[0]?.close || [];
+  const out=[];
+  for (let i=0;i<t.length;i++){
+    if (o[i]==null || c[i]==null) continue;
+    out.push({ t: t[i]*1000, o:+o[i], h:+h[i], l:+l[i], c:+c[i] });
+  }
+  return out;
+}
+
+// Binance klines
+async function fetchBinanceKlines(symbol, interval="1d") {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=500`;
+  const js = await (await fetch(url, { headers: UA_HEADERS })).json();
+  if (!Array.isArray(js)) throw new Error("binance klines failed");
+  return js.map(x => ({ t:x[0], o:+x[1], h:+x[2], l:+x[3], c:+x[4] }));
+}
+
+// OKX candles
+async function fetchOKXCandles(instId, bar="1D") {
+  const url = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=500`;
+  const js = await (await fetch(url, { headers: UA_HEADERS })).json();
+  if (!Array.isArray(js?.data)) throw new Error("okx candles failed");
+  const rows = js.data.map(x => ({ t:+x[0], o:+x[1], h:+x[2], l:+x[3], c:+x[4] }));
+  rows.sort((a,b)=> a.t-b.t);
+  return rows;
+}
+
+/* ================================ GITHUB I/O =============================== */
 async function ghReadJSON(path, repo, branch) {
   const base = process.env.NEXT_PUBLIC_API_BASE || "";
   const qs = new URLSearchParams({ op: "read", path, repo: repo||"", branch: branch||"" }).toString();
@@ -396,14 +392,13 @@ async function ghReadJSON(path, repo, branch) {
   if (!r.ok) throw new Error(`ghRead ${r.status} ${await r.text()}`);
   return r.json();
 }
-
 async function ghWrite(path, repo, branch, content, message) {
   const base = process.env.NEXT_PUBLIC_API_BASE || "";
   const qs = new URLSearchParams({ op: "write", path, repo: repo||"", branch: branch||"" }).toString();
   const url = `${base}/api/github?${qs}`;
   const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ content, message })
   });
   if (!r.ok) throw new Error(`ghWrite ${r.status} ${await r.text()}`);
@@ -412,9 +407,9 @@ async function ghWrite(path, repo, branch, content, message) {
 
 /**
  * mergeAndWriteSignals:
- * - load previous data/signals.json
- * - if same group → merge by ticker (new overwrites old)
- * - write back with updatedAt
+ *  - โหลด signals.json เดิม
+ *  - ถ้า group เดิม → รวมผลโดย key = ticker (ข้อมูลใหม่ทับของเก่า)
+ *  - เขียนกลับ พร้อม updatedAt ใหม่
  */
 async function mergeAndWriteSignals(payload) {
   const repo   = process.env.GH_REPO || process.env.GH_REPO_SYMBOLS;
@@ -430,25 +425,11 @@ async function mergeAndWriteSignals(payload) {
   }
   for (const r of payload.results) map.set(r.ticker, r);
 
-  // Sort: BUY ก่อน, ตามด้วย SELL, ที่เหลือ "-"
-  const arr = Array.from(map.values()).sort((a,b) => {
-    const score = v => v.signalD === "Buy" || v.signalW === "Buy" ? 0
-                      : (v.signalD === "Sell" || v.signalW === "Sell") ? 1 : 2;
-    return score(a) - score(b) || a.ticker.localeCompare(b.ticker);
-  });
-
-  const merged = { group: payload.group, updatedAt: payload.updatedAt, results: arr };
-  await ghWrite(path, repo, branch, JSON.stringify(merged, null, 2), `update signals ${payload.group}`);
+  const merged = { group: payload.group, updatedAt: payload.updatedAt, results: Array.from(map.values()) };
+  await ghWrite(path, repo, branch, JSON.stringify(merged,null,2), `update signals ${payload.group}`);
   return merged;
 }
 
-/* ================================= Utils ================================== */
-
-const UA = () => ({ headers: { "User-Agent": "signal-dashboard/1.1" } });
-
-function clampInt(v, min, max, def) {
-  const n = parseInt(v ?? "", 10);
-  if (Number.isFinite(n)) return Math.max(min, Math.min(max, n));
-  return def;
-}
+/* ================================== UTILS ================================= */
 const uniq = arr => Array.from(new Set((arr||[]).map(s => String(s||"").trim()).filter(Boolean)));
+const round2 = n => Math.round(n*100)/100;
