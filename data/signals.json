@@ -1,0 +1,24 @@
+{
+  "groups": {
+    "gold": {
+      "group": "gold",
+      "updatedAt": "2025-09-24T19:38:15.099Z",
+      "results": [
+        {
+          "ticker": "GC=F",
+          "signalD": "Sell",
+          "signalW": "Sell",
+          "price": 3750.7,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "XAUUSD=X",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        }
+      ]
+    }
+  }
+}
