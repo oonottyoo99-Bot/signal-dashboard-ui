@@ -19,6 +19,712 @@
           "timeframe": "1D"
         }
       ]
+    },
+    "altcoins": {
+      "group": "altcoins",
+      "updatedAt": "2025-09-24T19:38:16.465Z",
+      "results": [
+        {
+          "ticker": "OAS_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "KNC_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "TRUMP_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "BOME_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "RESOLV_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LUNA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SPK_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "PI_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "AGLD_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CVX_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "JTO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LSK_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "IOTA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "BONK_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "PNUT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "A_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "QTUM_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "EIGEN_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CSPR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ELON_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "RUNECOIN_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ZKJ_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "AXS_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ASP_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "MEMEFI_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LQTY_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "VELO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ETC_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ASTR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "IP_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "BCH_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SAFE_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "APT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "GAS_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "TRX_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CELR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CELO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "W_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SAND_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LAT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "T_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "PUMP_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CRO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "RAY_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "FLM_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "PIXEL_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SOL_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "API3_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SWFTC_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "YFI_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "USD1_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "WCT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LDO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "TRA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "DEGEN_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "MERL_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "FET_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "NMR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "TON_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "AAVE_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "S_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "NEIRO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "TRB_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "HMSTR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SWEAT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "DOGE_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "MORPHO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "BICO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ENA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "FOXY_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "XRP_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ENS_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LPT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "BNB_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "MOVE_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "OMI_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CRV_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "TNSR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ARB_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SONIC_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "EGLD_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "POR_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "NEO_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SD_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "BNT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "CHZ_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "DOT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "XAUT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "POLYDOGE_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "MINA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "GMX_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "PHA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "GRT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "MEW_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "SKL_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "NOT_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "LINEA_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "IOST_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "STRK_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        },
+        {
+          "ticker": "ATH_USDT",
+          "signalD": "-",
+          "signalW": "-",
+          "price": null,
+          "timeframe": "1D"
+        }
+      ]
     }
   }
 }
